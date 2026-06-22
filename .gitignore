@@ -2,7 +2,12 @@
 **/*.kdbx
 **/*.keyfile
 .DS_Store
-docs/
+docs/*
+!docs/changelogs/
+!docs/changelogs/**
+!docs/github-setup.md
+!docs/superpowers/
+!docs/superpowers/**
 .docs/
 .ai/
 .worktrees/
