@@ -226,6 +226,52 @@ fn import_json_without_merge_removes_unmentioned_entries() {
 }
 
 #[test]
+fn import_dotenv_hidden_without_merge_rejects_and_preserves_vault() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let import_file = dir.path().join("hidden.env");
+    setup_multi_entry_vault(&db);
+
+    let exported = kprun()
+        .envs(env_for(&db))
+        .args(["export", "--format", "dotenv", "--stdout"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    std::fs::write(&import_file, &exported).unwrap();
+
+    kprun()
+        .envs(env_for(&db))
+        .args(["import", import_file.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "structure-only dotenv export cannot be imported",
+        ));
+
+    let list = kprun()
+        .envs(env_for(&db))
+        .args(["list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Value = serde_json::from_slice(&list).unwrap();
+    let titles: Vec<&str> = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles.len(), 2);
+    assert!(titles.contains(&"github"));
+    assert!(titles.contains(&"postgres"));
+}
+
+#[test]
 fn import_dotenv_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");

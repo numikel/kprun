@@ -42,6 +42,12 @@ fn run(file: &str, merge: bool) -> Result<()> {
         parse_dotenv_import(&content)?
     };
 
+    if !merge && entries.is_empty() {
+        return Err(KprunError::Other(
+            "import file contains no entries; refusing to replace vault".into(),
+        ));
+    }
+
     let (_cfg, ctx, mut vault) = unlock_vault(OpenMode::ReadWrite)?;
 
     if !merge {
@@ -116,6 +122,8 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     let mut entries = Vec::new();
     let mut current_title: Option<String> = None;
     let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut saw_structure = false;
+    let mut saw_key_value = false;
 
     let flush = |title: &mut Option<String>, pairs: &mut Vec<(String, String)>, entries: &mut Vec<ParsedEntry>| {
         if let Some(t) = title.take() {
@@ -141,9 +149,11 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
                 continue;
             }
             if current_title.is_none() {
+                saw_structure = true;
                 current_title = Some(label.to_string());
             } else if pairs.is_empty() && !label.contains('=') {
                 // Commented key placeholder from non-reveal export — skip.
+                saw_structure = true;
                 continue;
             } else {
                 flush(&mut current_title, &mut pairs, &mut entries);
@@ -162,6 +172,7 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
                     "dotenv import line before entry title comment".into(),
                 ));
             }
+            saw_key_value = true;
             pairs.push((key.to_string(), value.to_string()));
         } else {
             return Err(KprunError::Other(format!(
@@ -171,5 +182,12 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     }
 
     flush(&mut current_title, &mut pairs, &mut entries);
+
+    if entries.is_empty() && saw_structure && !saw_key_value {
+        return Err(KprunError::Other(
+            "structure-only dotenv export cannot be imported; re-export with --reveal or use --merge carefully".into(),
+        ));
+    }
+
     Ok(entries)
 }
