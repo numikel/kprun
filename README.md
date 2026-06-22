@@ -23,15 +23,22 @@ Typical uses:
 
 ## How it works
 
-```
-  Without kprun:                          With kprun:
+```mermaid
+flowchart LR
+    subgraph without ["Without kprun"]
+        direction TB
+        W1["shell exports GITHUB_TOKEN=…"]
+        W1 -->|"secrets in every child"| W2["all processes inherit env"]
+    end
 
-  shell exports GITHUB_TOKEN=…            kprun run github -- npx @mcp/server-github
-       │                                         │
-       │  secrets in every child                  ├─ unlock vault (keyfile → keyring → prompt)
-       ▼                                         ├─ read entry "github" custom fields
-  all processes inherit env                      ├─ inject env into child only
-                                                 └─ inherit stdio; audit log (key names only)
+    subgraph with ["With kprun"]
+        direction TB
+        K1["kprun run github -- npx @mcp/server-github"]
+        K1 --> K2["unlock vault<br/>(keyfile → keyring → prompt)"]
+        K2 --> K3["read entry \"github\" custom fields"]
+        K3 --> K4["inject env into child only"]
+        K4 --> K5["inherit stdio; audit log (key names only)"]
+    end
 ```
 
 Unlock priority: `KPRUN_KEYFILE` → OS keystore (`kprun` / `master`) → hidden stderr prompt.
@@ -309,23 +316,6 @@ MIT License — see [LICENSE](LICENSE).
 
 **@numikel**
 
-Developed with help from:
-
-- Cursor
-
 ---
 
 **Security note:** kprun injects secrets into child process environments. Treat the vault file, keyfile, and audit log as sensitive. Do not commit `.kdbx` files or keyfiles to version control.
-
-## Polski (skrót)
-
-`kprun` trzyma sekrety w bazie KeePass (`.kdbx`, zgodnej z KeePassXC), odblokowuje ją przez keychain systemowy lub hasło, i wstrzykuje zmienne środowiskowe tylko do jednego procesu potomnego.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/numikel/kprun/refs/heads/main/scripts/install.sh | sh
-kprun init
-kprun set github GITHUB_TOKEN=ghp_xxx
-kprun run github -- npx -y @modelcontextprotocol/server-github
-```
-
-Zmienne: `KPRUN_DB`, `KPRUN_KEYFILE`, `KPRUN_LOG`. Do crona bez sesji użytkownika ustaw `KPRUN_KEYFILE` i ogranicz uprawnienia do pliku klucza.
