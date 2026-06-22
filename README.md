@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/numikel/kprun/actions/workflows/ci.yml/badge.svg)](https://github.com/numikel/kprun/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Rust](https://img.shields.io/badge/Rust-1.85.1-orange?logo=rust)
+![Rust](https://img.shields.io/badge/Rust-1.88.0-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 **Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
@@ -56,7 +56,7 @@ Unlock priority: `KPRUN_KEYFILE` → OS keystore (`kprun` / `master`) → hidden
 
 ## Requirements
 
-- **Rust**: 1.85.1+ (to build from source)
+- **Rust**: 1.88.0+ (to build from source)
 - **OS**: Linux, macOS, or Windows
 - **Optional**: [KeePassXC](https://keepassxc.org/) to create or edit `.kdbx` files
 - **MCP client**: Cursor, Claude Code, or any tool that spawns a subprocess over stdio
