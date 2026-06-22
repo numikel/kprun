@@ -65,6 +65,10 @@ pub fn unlock_master(
 }
 
 pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
+    // Test hook must override keyring so integration tests stay deterministic locally.
+    if std::env::var("KPRUN_TEST_MASTER").is_ok() {
+        return unlock_master(ctx, &PromptUnlock);
+    }
     match unlock_master(ctx, &SystemUnlock) {
         Ok(pw) => Ok(pw),
         // Headless Linux (CI) may have no secret-service store; fall back to prompt/test env.
