@@ -20,3 +20,7 @@ which.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+
+[[test]]
+name = "version"
+path = "../../tests/version.rs"
