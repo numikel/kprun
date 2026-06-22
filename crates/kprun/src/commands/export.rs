@@ -85,7 +85,9 @@ fn export_json(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(serde_json::to_string_pretty(&json!({ "entries": entries }))?)
+    Ok(serde_json::to_string_pretty(
+        &json!({ "entries": entries }),
+    )?)
 }
 
 fn export_dotenv(

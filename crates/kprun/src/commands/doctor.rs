@@ -1,5 +1,7 @@
 use kprun_core::config::Config;
-use kprun_core::unlock::{build_database_key, keystore_has_master, unlock_with_fallback, UnlockContext};
+use kprun_core::unlock::{
+    build_database_key, keystore_has_master, unlock_with_fallback, UnlockContext,
+};
 use kprun_core::vault::{open_vault, OpenMode};
 use kprun_core::Result;
 use serde_json::json;

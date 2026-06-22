@@ -34,7 +34,7 @@ fn run(json: bool) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string(&payload)?);
     } else {
-        println!("{:<20} {}", "TITLE", "KEYS");
+        println!("{:<20} KEYS", "TITLE");
         for e in &entries {
             println!("{:<20} {}", e.title, e.keys.join(", "));
         }

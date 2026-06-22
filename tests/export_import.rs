@@ -11,10 +11,7 @@ fn setup_multi_entry_vault(db: &Path) {
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
     vault
-        .set_attributes(
-            "github",
-            &[("GITHUB_TOKEN".into(), "ghp_secret".into())],
-        )
+        .set_attributes("github", &[("GITHUB_TOKEN".into(), "ghp_secret".into())])
         .unwrap();
     vault
         .set_attributes(
@@ -58,7 +55,7 @@ fn export_json_hides_values_by_default() {
     for entry in entries {
         let keys = &entry["keys"];
         assert!(keys.is_array());
-        assert!(!keys.as_object().is_some());
+        assert!(keys.as_object().is_none());
     }
 
     let text = String::from_utf8_lossy(&output);
@@ -145,11 +142,7 @@ fn import_json_merge_preserves_unmentioned_entries() {
 
     kprun()
         .envs(env_for(&db))
-        .args([
-            "import",
-            import_file.to_str().unwrap(),
-            "--merge",
-        ])
+        .args(["import", import_file.to_str().unwrap(), "--merge"])
         .assert()
         .success();
 
@@ -281,26 +274,14 @@ fn import_dotenv_roundtrip() {
 
     kprun()
         .envs(env_for(&db))
-        .args([
-            "export",
-            "--format",
-            "dotenv",
-            "--stdout",
-            "--reveal",
-        ])
+        .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
         .stdout(predicates::str::contains("GITHUB_TOKEN=ghp_secret"));
 
     let exported = kprun()
         .envs(env_for(&db))
-        .args([
-            "export",
-            "--format",
-            "dotenv",
-            "--stdout",
-            "--reveal",
-        ])
+        .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
         .get_output()

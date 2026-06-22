@@ -11,10 +11,7 @@ fn setup_vault(db: &Path) {
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
     vault
-        .set_attributes(
-            "github",
-            &[("GITHUB_TOKEN".into(), "ghp_secret".into())],
-        )
+        .set_attributes("github", &[("GITHUB_TOKEN".into(), "ghp_secret".into())])
         .unwrap();
     vault.save(key).unwrap();
 }

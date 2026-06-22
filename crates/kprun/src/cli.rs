@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "kprun", version, about = "Inject KeePass secrets into a child process")]
+#[command(
+    name = "kprun",
+    version,
+    about = "Inject KeePass secrets into a child process"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

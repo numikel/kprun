@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use assert_cmd::Command;
-use predicates::prelude::PredicateBooleanExt;
 use kprun_core::unlock::{build_database_key, UnlockContext};
 use kprun_core::vault::{create_vault, open_vault, OpenMode};
+use predicates::prelude::PredicateBooleanExt;
 
 fn setup_openai_vault(db: &Path) {
     let ctx = UnlockContext { keyfile: None };

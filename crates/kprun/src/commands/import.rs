@@ -63,7 +63,8 @@ fn run(file: &str, merge: bool) -> Result<()> {
         if !merge {
             if let Ok(id) = vault.find_entry_by_title(&entry.title) {
                 let existing = vault.entry_custom_keys(id);
-                let imported_keys: HashSet<&str> = entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
+                let imported_keys: HashSet<&str> =
+                    entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
                 let to_remove: Vec<String> = existing
                     .into_iter()
                     .filter(|k| !imported_keys.contains(k.as_str()))
@@ -125,7 +126,9 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     let mut saw_structure = false;
     let mut saw_key_value = false;
 
-    let flush = |title: &mut Option<String>, pairs: &mut Vec<(String, String)>, entries: &mut Vec<ParsedEntry>| {
+    let flush = |title: &mut Option<String>,
+                 pairs: &mut Vec<(String, String)>,
+                 entries: &mut Vec<ParsedEntry>| {
         if let Some(t) = title.take() {
             if !pairs.is_empty() {
                 entries.push(ParsedEntry {

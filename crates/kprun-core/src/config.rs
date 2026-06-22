@@ -57,14 +57,8 @@ mod tests {
     #[test]
     fn default_db_under_home_kprun() {
         let cfg = Config::from_env_overrides(None, None, None);
-        assert_eq!(
-            cfg.db_path,
-            dirs_home().join(".kprun").join("secrets.kdbx")
-        );
-        assert_eq!(
-            cfg.log_path,
-            dirs_home().join(".kprun").join("access.log")
-        );
+        assert_eq!(cfg.db_path, dirs_home().join(".kprun").join("secrets.kdbx"));
+        assert_eq!(cfg.log_path, dirs_home().join(".kprun").join("access.log"));
     }
 
     fn dirs_home() -> PathBuf {

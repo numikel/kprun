@@ -23,10 +23,7 @@ pub fn resolve_executable(cmd: &str) -> PathBuf {
     PathBuf::from(cmd)
 }
 
-pub fn run_child(
-    command: &[String],
-    extra_env: &HashMap<String, String>,
-) -> std::io::Result<i32> {
+pub fn run_child(command: &[String], extra_env: &HashMap<String, String>) -> std::io::Result<i32> {
     if command.is_empty() {
         return Ok(1);
     }

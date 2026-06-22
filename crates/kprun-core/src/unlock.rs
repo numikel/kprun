@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
 
 use keepass::DatabaseKey;

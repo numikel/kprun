@@ -53,4 +53,3 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault)> {
     let vault = open_vault(&cfg.db_path, db_key, mode)?;
     Ok((cfg, ctx, vault))
 }
-

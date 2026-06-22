@@ -32,9 +32,9 @@ pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<Inject
 #[cfg(test)]
 mod tests {
     use super::resolve_injection;
-    use crate::{KprunError, Result};
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::vault::{open_vault, OpenMode};
+    use crate::{KprunError, Result};
     use keepass::db::fields;
     use std::path::Path;
     use tempfile::tempdir;

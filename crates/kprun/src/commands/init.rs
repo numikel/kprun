@@ -98,8 +98,8 @@ fn read_password_prompt(prompt: &str) -> Result<Zeroizing<String>> {
     }
 
     if io::stdin().is_terminal() {
-        let pw = rpassword::prompt_password(prompt)
-            .map_err(|e| KprunError::Other(e.to_string()))?;
+        let pw =
+            rpassword::prompt_password(prompt).map_err(|e| KprunError::Other(e.to_string()))?;
         return Ok(Zeroizing::new(pw));
     }
 

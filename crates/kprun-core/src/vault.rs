@@ -9,8 +9,16 @@ use crate::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
 use crate::{KprunError, Result};
 
 const STANDARD_FIELDS: &[&str] = &[
-    "Title", "UserName", "Password", "URL", "Notes", "Expires",
-    "Created", "LastAccess", "LastModification", "Tags",
+    "Title",
+    "UserName",
+    "Password",
+    "URL",
+    "Notes",
+    "Expires",
+    "Created",
+    "LastAccess",
+    "LastModification",
+    "Tags",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,13 +172,13 @@ impl Vault {
     }
 
     pub fn save(&mut self, key: keepass::DatabaseKey) -> Result<()> {
-        let mut tmp = tempfile::NamedTempFile::new_in(
-            self.path.parent().unwrap_or_else(|| Path::new(".")),
-        )?;
+        let mut tmp =
+            tempfile::NamedTempFile::new_in(self.path.parent().unwrap_or_else(|| Path::new(".")))?;
         self.db
             .save(tmp.as_file_mut(), key)
             .map_err(map_save_error)?;
-        tmp.persist(&self.path).map_err(|e| KprunError::Io(e.error))?;
+        tmp.persist(&self.path)
+            .map_err(|e| KprunError::Io(e.error))?;
         Ok(())
     }
 
@@ -182,9 +190,7 @@ impl Vault {
 }
 
 fn is_standard_field(name: &str) -> bool {
-    STANDARD_FIELDS
-        .iter()
-        .any(|f| f.eq_ignore_ascii_case(name))
+    STANDARD_FIELDS.iter().any(|f| f.eq_ignore_ascii_case(name))
 }
 
 fn custom_field_names(entry: &EntryRef<'_>) -> Vec<String> {
@@ -258,10 +264,7 @@ mod tests {
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
         vault
-            .set_attributes(
-                "openai",
-                &[("OPENAI_API_KEY".into(), "sk-test".into())],
-            )
+            .set_attributes("openai", &[("OPENAI_API_KEY".into(), "sk-test".into())])
             .unwrap();
         vault.save(key.clone()).unwrap();
 
