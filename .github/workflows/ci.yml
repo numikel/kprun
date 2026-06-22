@@ -26,3 +26,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash -n scripts/install.sh
       - run: pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("scripts/install.ps1", [ref]$null, [ref]$errs); if ($errs) { exit 1 }'
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo audit
+        run: cargo audit
