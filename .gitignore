@@ -2,6 +2,7 @@
 **/*.kdbx
 **/*.keyfile
 .DS_Store
+docs/
 .docs/
 .ai/
 .worktrees/
