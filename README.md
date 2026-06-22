@@ -35,7 +35,7 @@ flowchart LR
         direction TB
         K1["kprun run github -- npx @mcp/server-github"]
         K1 --> K2["unlock vault<br/>(keyfile → keyring → prompt)"]
-        K2 --> K3["read entry \"github\" custom fields"]
+        K2 --> K3["read entry 'github' custom fields"]
         K3 --> K4["inject env into child only"]
         K4 --> K5["inherit stdio; audit log (key names only)"]
     end
