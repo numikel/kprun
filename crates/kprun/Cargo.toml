@@ -51,3 +51,7 @@ path = "../../tests/export_import.rs"
 [[test]]
 name = "doctor"
 path = "../../tests/doctor.rs"
+
+[[test]]
+name = "keepassxc_compat"
+path = "../../tests/keepassxc_compat.rs"
