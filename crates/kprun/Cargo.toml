@@ -47,3 +47,7 @@ path = "../../tests/manage.rs"
 [[test]]
 name = "export_import"
 path = "../../tests/export_import.rs"
+
+[[test]]
+name = "doctor"
+path = "../../tests/doctor.rs"
