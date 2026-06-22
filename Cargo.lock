@@ -1036,10 +1036,12 @@ dependencies = [
  "clap",
  "kprun-core",
  "predicates",
+ "rpassword",
  "serde",
  "serde_json",
  "tempfile",
  "which",
+ "zeroize",
 ]
 
 [[package]]

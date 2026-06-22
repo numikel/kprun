@@ -36,6 +36,9 @@ pub struct PromptUnlock;
 
 impl MasterPasswordSource for PromptUnlock {
     fn get_master(&self) -> Result<Zeroizing<String>> {
+        if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
+            return Ok(Zeroizing::new(pw));
+        }
         let pw = rpassword::prompt_password("KeePass master password: ")
             .map_err(|e| KprunError::Other(e.to_string()))?;
         if pw.is_empty() {

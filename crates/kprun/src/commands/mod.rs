@@ -2,13 +2,15 @@ use std::process;
 
 use crate::cli::{Commands, ExportFormat};
 
+mod init;
+
 pub fn dispatch(command: Commands) {
     match command {
         Commands::Init {
             db,
             no_store,
             keyfile,
-        } => init(db, no_store, keyfile),
+        } => std::process::exit(init::execute(db, no_store, keyfile)),
         Commands::Run { entries, command } => run(entries, command),
         Commands::List { json } => list(json),
         Commands::Get {
@@ -32,10 +34,6 @@ pub fn dispatch(command: Commands) {
 fn unimplemented(name: &str) -> ! {
     eprintln!("unimplemented: {name}");
     process::exit(1);
-}
-
-fn init(_db: Option<String>, _no_store: bool, _keyfile: Option<String>) {
-    unimplemented("init");
 }
 
 fn run(_entries: Vec<String>, _command: Vec<String>) {
