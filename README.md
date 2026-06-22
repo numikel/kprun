@@ -309,23 +309,6 @@ MIT License — see [LICENSE](LICENSE).
 
 **@numikel**
 
-Developed with help from:
-
-- Cursor
-
 ---
 
 **Security note:** kprun injects secrets into child process environments. Treat the vault file, keyfile, and audit log as sensitive. Do not commit `.kdbx` files or keyfiles to version control.
-
-## Polski (skrót)
-
-`kprun` trzyma sekrety w bazie KeePass (`.kdbx`, zgodnej z KeePassXC), odblokowuje ją przez keychain systemowy lub hasło, i wstrzykuje zmienne środowiskowe tylko do jednego procesu potomnego.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/numikel/kprun/refs/heads/main/scripts/install.sh | sh
-kprun init
-kprun set github GITHUB_TOKEN=ghp_xxx
-kprun run github -- npx -y @modelcontextprotocol/server-github
-```
-
-Zmienne: `KPRUN_DB`, `KPRUN_KEYFILE`, `KPRUN_LOG`. Do crona bez sesji użytkownika ustaw `KPRUN_KEYFILE` i ogranicz uprawnienia do pliku klucza.
