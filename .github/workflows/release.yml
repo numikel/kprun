@@ -12,8 +12,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse version from tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - name: Require per-version changelog
+        run: test -f "docs/changelogs/v${VERSION}.md"
+      - name: Require version match
+        run: |
+          set -euo pipefail
+          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$cargo_version" != "$VERSION" ]; then
+            echo "ERROR: Cargo.toml version ($cargo_version) != tag ($VERSION)"
+            exit 1
+          fi
+          echo "Version OK: $VERSION"
+
   build:
     name: Build ${{ matrix.target }}
+    needs: validate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -87,6 +107,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Parse version from tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -105,4 +128,6 @@ jobs:
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
+          body_path: docs/changelogs/v${{ env.VERSION }}.md
+          generate_release_notes: false
           files: release/*

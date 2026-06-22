@@ -7,7 +7,7 @@
 
 **Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
 
-[Releases](https://github.com/numikel/kprun/releases) · [Install](#installation) · [Quick start](#quick-start) · [MCP integration](#mcp-integration) · [Security model](#security-model)
+[Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md) · [Install](#installation) · [Quick start](#quick-start) · [MCP integration](#mcp-integration) · [Security model](#security-model)
 
 ---
 
@@ -291,17 +291,35 @@ cargo test --all
 ## Security model
 
 - Use a dedicated **dev-secrets** vault, not your personal password manager.
+- Report vulnerabilities per [SECURITY.md](SECURITY.md) (**contact@michalsk.pl**); do not file public issues for security bugs.
 - Secrets exist in the **child process environment** after injection (same model as other secret runners).
 - Audit log records entry names and injected key names — **never values**.
 - Do not use `setx` or global shell profiles for API keys.
 - Pass only the entries a command needs: `kprun run openai -- python script.py`, not every secret at once.
 - `export --reveal` and `get --reveal` print values to the terminal — use deliberately.
 
+## Releases
+
+kprun uses a two-step release process:
+
+1. **Prepare (local)** — In Cursor, run `/prepare-release X.Y.Z`. The agent writes `docs/changelogs/vX.Y.Z.md`, updates [CHANGELOG.md](CHANGELOG.md), bumps the workspace version, and commits `chore(release): prepare vX.Y.Z`.
+2. **Publish (manual)** — Tag and push:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin main --tags
+   ```
+
+CI validates the changelog file and version match, builds release binaries for five targets, and publishes a GitHub Release whose body comes from the per-version changelog file.
+
+See [docs/github-setup.md](docs/github-setup.md) for repository settings (branch protection, Dependabot, first release).
+
 ## Contributing
 
 1. Fork the repository.
 2. Create a feature branch (`git checkout -b feat/my-change`).
 3. Commit using **Conventional Commits 1.0.0** (e.g. `feat(cli): add example command`, `fix(core): handle locked db`).
+3.5. For release preparation, use `/prepare-release X.Y.Z` (maintainers only).
 4. Add or update tests for behavior changes.
 5. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all`.
 6. Open a pull request against `main`.

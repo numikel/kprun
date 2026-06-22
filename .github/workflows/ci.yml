@@ -26,3 +26,41 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash -n scripts/install.sh
       - run: pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("scripts/install.ps1", [ref]$null, [ref]$errs); if ($errs) { exit 1 }'
+
+  release-prep-check:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require changelog when workspace version changes
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          if ! git diff "$base" "$head" -- Cargo.toml | grep -q '^[+-].*version'; then
+            echo "Cargo.toml version unchanged — skip changelog check"
+            exit 0
+          fi
+          new_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          changelog="docs/changelogs/v${new_version}.md"
+          if git diff --name-only "$base" "$head" | grep -Fxq "$changelog"; then
+            echo "Found $changelog in PR"
+            exit 0
+          fi
+          echo "ERROR: Cargo.toml version bumped to ${new_version} but ${changelog} not added in this PR"
+          exit 1
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo audit
+        run: cargo audit
