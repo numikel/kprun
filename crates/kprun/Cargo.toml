@@ -39,3 +39,7 @@ path = "../../tests/init_set_run.rs"
 [[test]]
 name = "mcp_stdio"
 path = "../../tests/mcp_stdio.rs"
+
+[[test]]
+name = "manage"
+path = "../../tests/manage.rs"

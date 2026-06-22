@@ -1,9 +1,19 @@
 use std::process;
 
+use kprun_core::config::Config;
+use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
+use kprun_core::vault::{open_vault, OpenMode, Vault};
+use kprun_core::Result;
+
 use crate::cli::{Commands, ExportFormat};
 
+mod delete;
+mod get;
 mod init;
+mod list;
 mod run;
+mod set;
+mod unset;
 
 pub fn dispatch(command: Commands) {
     match command {
@@ -13,15 +23,15 @@ pub fn dispatch(command: Commands) {
             keyfile,
         } => std::process::exit(init::execute(db, no_store, keyfile)),
         Commands::Run { entries, command } => std::process::exit(run::execute(entries, command)),
-        Commands::List { json } => list(json),
+        Commands::List { json } => std::process::exit(list::execute(json)),
         Commands::Get {
             entry,
             keys,
             reveal,
-        } => get(entry, keys, reveal),
-        Commands::Set { entry, pairs } => set(entry, pairs),
-        Commands::Unset { entry, keys } => unset(entry, keys),
-        Commands::Delete { entry } => delete(entry),
+        } => std::process::exit(get::execute(entry, keys, reveal)),
+        Commands::Set { entry, pairs } => std::process::exit(set::execute(entry, pairs)),
+        Commands::Unset { entry, keys } => std::process::exit(unset::execute(entry, keys)),
+        Commands::Delete { entry } => std::process::exit(delete::execute(entry)),
         Commands::Export {
             format,
             stdout,
@@ -32,29 +42,20 @@ pub fn dispatch(command: Commands) {
     }
 }
 
+fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault)> {
+    let cfg = Config::from_env();
+    let ctx = UnlockContext {
+        keyfile: cfg.keyfile.clone(),
+    };
+    let master = unlock_with_fallback(&ctx)?;
+    let db_key = build_database_key(&ctx, &master)?;
+    let vault = open_vault(&cfg.db_path, db_key, mode)?;
+    Ok((cfg, ctx, vault))
+}
+
 fn unimplemented(name: &str) -> ! {
     eprintln!("unimplemented: {name}");
     process::exit(1);
-}
-
-fn list(_json: bool) {
-    unimplemented("list");
-}
-
-fn get(_entry: String, _keys: bool, _reveal: bool) {
-    unimplemented("get");
-}
-
-fn set(_entry: String, _pairs: Vec<String>) {
-    unimplemented("set");
-}
-
-fn unset(_entry: String, _keys: Vec<String>) {
-    unimplemented("unset");
-}
-
-fn delete(_entry: String) {
-    unimplemented("delete");
 }
 
 fn export(_format: ExportFormat, _stdout: bool, _reveal: bool) {

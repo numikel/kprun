@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use keepass::db::{fields, EntryId, EntryRef};
 use keepass::Database;
 
+use crate::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
 use crate::{KprunError, Result};
 
 const STANDARD_FIELDS: &[&str] = &[
@@ -171,6 +172,12 @@ impl Vault {
             .map_err(map_save_error)?;
         tmp.persist(&self.path).map_err(|e| KprunError::Io(e.error))?;
         Ok(())
+    }
+
+    pub fn save_with_unlock(&mut self, ctx: &UnlockContext) -> Result<()> {
+        let master = unlock_with_fallback(ctx)?;
+        let key = build_database_key(ctx, &master)?;
+        self.save(key)
     }
 }
 
