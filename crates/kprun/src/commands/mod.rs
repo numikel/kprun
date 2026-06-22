@@ -5,10 +5,12 @@ use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext
 use kprun_core::vault::{open_vault, OpenMode, Vault};
 use kprun_core::Result;
 
-use crate::cli::{Commands, ExportFormat};
+use crate::cli::Commands;
 
 mod delete;
+mod export;
 mod get;
+mod import;
 mod init;
 mod list;
 mod run;
@@ -36,8 +38,8 @@ pub fn dispatch(command: Commands) {
             format,
             stdout,
             reveal,
-        } => export(format, stdout, reveal),
-        Commands::Import { file, merge } => import(file, merge),
+        } => std::process::exit(export::execute(format, stdout, reveal)),
+        Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
         Commands::Doctor { mcp } => doctor(mcp),
     }
 }
@@ -56,14 +58,6 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault)> {
 fn unimplemented(name: &str) -> ! {
     eprintln!("unimplemented: {name}");
     process::exit(1);
-}
-
-fn export(_format: ExportFormat, _stdout: bool, _reveal: bool) {
-    unimplemented("export");
-}
-
-fn import(_file: String, _merge: bool) {
-    unimplemented("import");
 }
 
 fn doctor(_mcp: Option<String>) {
