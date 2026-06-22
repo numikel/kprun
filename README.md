@@ -23,15 +23,22 @@ Typical uses:
 
 ## How it works
 
-```
-  Without kprun:                          With kprun:
+```mermaid
+flowchart LR
+    subgraph without ["Without kprun"]
+        direction TB
+        W1["shell exports GITHUB_TOKEN=…"]
+        W1 -->|"secrets in every child"| W2["all processes inherit env"]
+    end
 
-  shell exports GITHUB_TOKEN=…            kprun run github -- npx @mcp/server-github
-       │                                         │
-       │  secrets in every child                  ├─ unlock vault (keyfile → keyring → prompt)
-       ▼                                         ├─ read entry "github" custom fields
-  all processes inherit env                      ├─ inject env into child only
-                                                 └─ inherit stdio; audit log (key names only)
+    subgraph with ["With kprun"]
+        direction TB
+        K1["kprun run github -- npx @mcp/server-github"]
+        K1 --> K2["unlock vault<br/>(keyfile → keyring → prompt)"]
+        K2 --> K3["read entry \"github\" custom fields"]
+        K3 --> K4["inject env into child only"]
+        K4 --> K5["inherit stdio; audit log (key names only)"]
+    end
 ```
 
 Unlock priority: `KPRUN_KEYFILE` → OS keystore (`kprun` / `master`) → hidden stderr prompt.
