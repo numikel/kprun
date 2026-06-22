@@ -19,7 +19,7 @@ pub enum Commands {
     },
     /// kprun run <entry>... -- <command> [args...]
     Run {
-        #[arg(num_args = 1.., value_terminator = "--")]
+        #[arg(num_args = 1.., value_terminator = "--", required = true)]
         entries: Vec<String>,
         #[arg(
             num_args = 1..,

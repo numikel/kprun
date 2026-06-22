@@ -3,6 +3,7 @@ use std::process;
 use crate::cli::{Commands, ExportFormat};
 
 mod init;
+mod run;
 
 pub fn dispatch(command: Commands) {
     match command {
@@ -11,7 +12,7 @@ pub fn dispatch(command: Commands) {
             no_store,
             keyfile,
         } => std::process::exit(init::execute(db, no_store, keyfile)),
-        Commands::Run { entries, command } => run(entries, command),
+        Commands::Run { entries, command } => std::process::exit(run::execute(entries, command)),
         Commands::List { json } => list(json),
         Commands::Get {
             entry,
@@ -34,10 +35,6 @@ pub fn dispatch(command: Commands) {
 fn unimplemented(name: &str) -> ! {
     eprintln!("unimplemented: {name}");
     process::exit(1);
-}
-
-fn run(_entries: Vec<String>, _command: Vec<String>) {
-    unimplemented("run");
 }
 
 fn list(_json: bool) {

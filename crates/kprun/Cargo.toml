@@ -22,6 +22,7 @@ zeroize.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+kprun-core = { path = "../kprun-core" }
 
 [[test]]
 name = "version"
@@ -30,3 +31,11 @@ path = "../../tests/version.rs"
 [[test]]
 name = "init"
 path = "../../tests/init.rs"
+
+[[test]]
+name = "init_set_run"
+path = "../../tests/init_set_run.rs"
+
+[[test]]
+name = "mcp_stdio"
+path = "../../tests/mcp_stdio.rs"
