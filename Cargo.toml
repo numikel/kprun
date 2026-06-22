@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/kprun-core", "crates/kprun"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85.1"
+license = "MIT"
+
+[workspace.dependencies]
+keepass = { version = "0.13.10", features = ["save_kdbx4"] }
+keyring = { version = "4.1.2", features = ["v1"] }  # v1 is default; explicit for clarity
+clap = { version = "4.6.1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+rpassword = "7.5"
+chrono = { version = "0.4", features = ["serde"] }
+zeroize = "1.9"
+rand = "0.10"
+which = "8.0"
+tempfile = "3.27"
+assert_cmd = "2.0"
+predicates = "3.1"

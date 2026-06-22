@@ -1,3 +1,7 @@
+/target/
+**/*.kdbx
+**/*.keyfile
+.DS_Store
 .docs/
 .ai/
 .worktrees/

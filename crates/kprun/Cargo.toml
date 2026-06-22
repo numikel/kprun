@@ -1,0 +1,57 @@
+[package]
+name = "kprun"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "kprun"
+path = "src/main.rs"
+
+[dependencies]
+kprun-core = { path = "../kprun-core" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+which.workspace = true
+rpassword.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+kprun-core = { path = "../kprun-core" }
+
+[[test]]
+name = "version"
+path = "../../tests/version.rs"
+
+[[test]]
+name = "init"
+path = "../../tests/init.rs"
+
+[[test]]
+name = "init_set_run"
+path = "../../tests/init_set_run.rs"
+
+[[test]]
+name = "mcp_stdio"
+path = "../../tests/mcp_stdio.rs"
+
+[[test]]
+name = "manage"
+path = "../../tests/manage.rs"
+
+[[test]]
+name = "export_import"
+path = "../../tests/export_import.rs"
+
+[[test]]
+name = "doctor"
+path = "../../tests/doctor.rs"
+
+[[test]]
+name = "keepassxc_compat"
+path = "../../tests/keepassxc_compat.rs"
