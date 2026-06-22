@@ -67,7 +67,8 @@ pub fn unlock_master(
 pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
     match unlock_master(ctx, &SystemUnlock) {
         Ok(pw) => Ok(pw),
-        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(keyring::v1::Error::NoEntry)) => {
+        // Headless Linux (CI) may have no secret-service store; fall back to prompt/test env.
+        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => {
             unlock_master(ctx, &PromptUnlock)
         }
         Err(e) => Err(e),
