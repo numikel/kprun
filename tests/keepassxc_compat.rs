@@ -48,7 +48,8 @@ fn reads_keepassxc_fixture() {
         keyfile: std::env::var_os("KPRUN_KEYFILE").map(PathBuf::from),
     };
     let key = build_database_key(&ctx, &master).expect("failed to build database key");
-    let vault = open_vault(&path, key, OpenMode::ReadOnly).expect("failed to open KeePassXC fixture");
+    let vault =
+        open_vault(&path, key, OpenMode::ReadOnly).expect("failed to open KeePassXC fixture");
 
     let id = vault
         .find_entry_by_title("fixture")
@@ -58,8 +59,5 @@ fn reads_keepassxc_fixture() {
     let value = values
         .get("FIXTURE_KEY")
         .expect("custom attribute FIXTURE_KEY not found on entry 'fixture'");
-    assert!(
-        !value.is_empty(),
-        "FIXTURE_KEY must be a non-empty string"
-    );
+    assert!(!value.is_empty(), "FIXTURE_KEY must be a non-empty string");
 }

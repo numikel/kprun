@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # kprun installer - https://github.com/numikel/kprun
-# Usage: curl -fsSL https://raw.githubusercontent.com/numikel/kprun/refs/heads/master/scripts/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/numikel/kprun/refs/heads/main/scripts/install.sh | sh
 
 set -e
 

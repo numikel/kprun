@@ -1,5 +1,5 @@
 # kprun installer - https://github.com/numikel/kprun
-# Usage: irm https://raw.githubusercontent.com/numikel/kprun/refs/heads/master/scripts/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/numikel/kprun/refs/heads/main/scripts/install.ps1 | iex
 
 #Requires -Version 5.1
 
