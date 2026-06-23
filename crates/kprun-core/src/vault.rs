@@ -48,7 +48,7 @@ impl Vault {
         &self.db
     }
 
-    pub fn database_mut(&mut self) -> &mut Database {
+    pub(crate) fn database_mut(&mut self) -> &mut Database {
         &mut self.db
     }
 }
