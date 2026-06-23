@@ -48,7 +48,7 @@ fn run(file: &str, merge: bool) -> Result<()> {
         ));
     }
 
-    let (_cfg, ctx, mut vault) = unlock_vault(OpenMode::ReadWrite)?;
+    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
 
     if !merge {
         let imported_titles: HashSet<String> = entries.iter().map(|e| e.title.clone()).collect();
@@ -77,7 +77,7 @@ fn run(file: &str, merge: bool) -> Result<()> {
         vault.set_attributes(&entry.title, &entry.pairs)?;
     }
 
-    vault.save_with_unlock(&ctx)?;
+    vault.save_with_key(db_key)?;
     Ok(())
 }
 

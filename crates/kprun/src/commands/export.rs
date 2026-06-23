@@ -20,7 +20,7 @@ pub fn execute(format: ExportFormat, stdout: bool, reveal: bool) -> i32 {
 }
 
 fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
-    let (cfg, _ctx, vault) = unlock_vault(OpenMode::ReadOnly)?;
+    let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let summaries = vault.list_entries();
 
     if reveal {

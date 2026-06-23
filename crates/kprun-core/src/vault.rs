@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use keepass::db::{fields, EntryId, EntryRef};
 use keepass::Database;
 
-use crate::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
+pub use keepass::DatabaseKey;
+
 use crate::{KprunError, Result};
 
 const STANDARD_FIELDS: &[&str] = &[
@@ -189,9 +190,8 @@ impl Vault {
         Ok(())
     }
 
-    pub fn save_with_unlock(&mut self, ctx: &UnlockContext) -> Result<()> {
-        let master = unlock_with_fallback(ctx)?;
-        let key = build_database_key(ctx, &master)?;
+    pub fn save_with_key(&mut self, key: keepass::DatabaseKey) -> Result<()> {
+        self.require_rw()?;
         self.save(key)
     }
 }
@@ -301,5 +301,25 @@ mod tests {
 
         let err = vault.save(key).unwrap_err();
         assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
+    }
+
+    #[test]
+    fn save_with_key_persists_without_second_unlock() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("key.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes("svc", &[("TOKEN".into(), "t1".into())])
+            .unwrap();
+        vault.save_with_key(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
     }
 }

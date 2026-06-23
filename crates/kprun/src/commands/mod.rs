@@ -1,6 +1,6 @@
 use kprun_core::config::Config;
 use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
-use kprun_core::vault::{open_vault, OpenMode, Vault};
+use kprun_core::vault::{open_vault, DatabaseKey, OpenMode, Vault};
 use kprun_core::Result;
 
 use crate::cli::Commands;
@@ -43,13 +43,13 @@ pub fn dispatch(command: Commands) {
     }
 }
 
-fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault)> {
+fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, DatabaseKey)> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
     };
     let master = unlock_with_fallback(&ctx)?;
     let db_key = build_database_key(&ctx, &master)?;
-    let vault = open_vault(&cfg.db_path, db_key, mode)?;
-    Ok((cfg, ctx, vault))
+    let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
+    Ok((cfg, ctx, vault, db_key))
 }
