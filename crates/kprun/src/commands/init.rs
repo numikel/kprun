@@ -76,6 +76,7 @@ fn create_new(cfg: &Config, db_path: &Path, ctx: &UnlockContext, no_store: bool)
 }
 
 fn prompt_new_master() -> Result<Zeroizing<String>> {
+    #[cfg(feature = "test-hooks")]
     if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
         return Ok(Zeroizing::new(pw));
     }
@@ -93,6 +94,7 @@ fn prompt_new_master() -> Result<Zeroizing<String>> {
 }
 
 fn read_password_prompt(prompt: &str) -> Result<Zeroizing<String>> {
+    #[cfg(feature = "test-hooks")]
     if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
         return Ok(Zeroizing::new(pw));
     }
