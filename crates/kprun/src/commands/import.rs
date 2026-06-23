@@ -176,7 +176,7 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
                 ));
             }
             saw_key_value = true;
-            pairs.push((key.to_string(), value.to_string()));
+            pairs.push((key.to_string(), value.trim().to_string()));
         } else {
             return Err(KprunError::Other(format!(
                 "invalid dotenv import line: {line}"
