@@ -14,8 +14,8 @@ pub fn execute(entry: String) -> i32 {
 }
 
 fn run(entry: &str) -> Result<()> {
-    let (_cfg, ctx, mut vault) = unlock_vault(OpenMode::ReadWrite)?;
+    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     vault.delete_entry(entry)?;
-    vault.save_with_unlock(&ctx)?;
+    vault.save_with_key(db_key)?;
     Ok(())
 }

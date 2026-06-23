@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use keepass::db::{fields, EntryId, EntryRef};
 use keepass::Database;
 
-use crate::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
+pub use keepass::DatabaseKey;
+
 use crate::{KprunError, Result};
 
 const STANDARD_FIELDS: &[&str] = &[
@@ -48,7 +49,8 @@ impl Vault {
         &self.db
     }
 
-    pub fn database_mut(&mut self) -> &mut Database {
+    #[expect(dead_code)]
+    pub(crate) fn database_mut(&mut self) -> &mut Database {
         &mut self.db
     }
 }
@@ -83,6 +85,13 @@ pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Re
 }
 
 impl Vault {
+    fn require_rw(&self) -> Result<()> {
+        if self.mode != OpenMode::ReadWrite {
+            return Err(KprunError::Other("vault opened read-only".into()));
+        }
+        Ok(())
+    }
+
     pub fn find_entry_by_title(&self, title: &str) -> Result<EntryId> {
         let title_lower = title.to_ascii_lowercase();
         for entry in self.db.iter_all_entries() {
@@ -123,10 +132,7 @@ impl Vault {
     }
 
     pub fn set_attributes(&mut self, title: &str, pairs: &[(String, String)]) -> Result<()> {
-        let mode_check = self.mode == OpenMode::ReadWrite;
-        if !mode_check {
-            return Err(KprunError::Other("vault opened read-only".into()));
-        }
+        self.require_rw()?;
         let title_owned = title.to_string();
         let result = self.find_entry_by_title(&title_owned);
         match result {
@@ -152,6 +158,7 @@ impl Vault {
     }
 
     pub fn unset_attributes(&mut self, title: &str, keys: &[String]) -> Result<()> {
+        self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
         if let Some(mut entry) = self.db.entry_mut(id) {
             for k in keys {
@@ -162,6 +169,7 @@ impl Vault {
     }
 
     pub fn delete_entry(&mut self, title: &str) -> Result<()> {
+        self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
         if let Some(entry) = self.db.entry_mut(id) {
             entry.remove();
@@ -172,6 +180,7 @@ impl Vault {
     }
 
     pub fn save(&mut self, key: keepass::DatabaseKey) -> Result<()> {
+        self.require_rw()?;
         let mut tmp =
             tempfile::NamedTempFile::new_in(self.path.parent().unwrap_or_else(|| Path::new(".")))?;
         self.db
@@ -182,9 +191,8 @@ impl Vault {
         Ok(())
     }
 
-    pub fn save_with_unlock(&mut self, ctx: &UnlockContext) -> Result<()> {
-        let master = unlock_with_fallback(ctx)?;
-        let key = build_database_key(ctx, &master)?;
+    pub fn save_with_key(&mut self, key: keepass::DatabaseKey) -> Result<()> {
+        self.require_rw()?;
         self.save(key)
     }
 }
@@ -194,12 +202,14 @@ fn is_standard_field(name: &str) -> bool {
 }
 
 fn custom_field_names(entry: &EntryRef<'_>) -> Vec<String> {
-    entry
+    let mut keys: Vec<String> = entry
         .fields
         .keys()
         .filter(|k| !is_standard_field(k))
         .cloned()
-        .collect()
+        .collect();
+    keys.sort_unstable();
+    keys
 }
 
 fn custom_fields(entry: &EntryRef<'_>) -> HashMap<String, String> {
@@ -224,6 +234,7 @@ fn map_save_error(e: impl std::fmt::Display) -> KprunError {
 mod tests {
     use super::*;
     use crate::unlock::{build_database_key, UnlockContext};
+    use crate::KprunError;
     use keepass::db::fields;
     use tempfile::tempdir;
 
@@ -275,5 +286,73 @@ mod tests {
             vals.get("OPENAI_API_KEY").map(String::as_str),
             Some("sk-test")
         );
+    }
+
+    #[test]
+    fn read_only_vault_rejects_write_operations() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ro.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadOnly).unwrap();
+        let err = vault
+            .unset_attributes("missing", &["KEY".into()])
+            .unwrap_err();
+        assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
+
+        let err = vault.save(key).unwrap_err();
+        assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
+    }
+
+    #[test]
+    fn custom_field_names_are_sorted_alphabetically() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sort.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes(
+                "svc",
+                &[
+                    ("ZZZ".into(), "z".into()),
+                    ("AAA".into(), "a".into()),
+                    ("MMM".into(), "m".into()),
+                ],
+            )
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let keys = vault2.entry_custom_keys(id);
+        assert_eq!(
+            keys,
+            vec!["AAA".to_string(), "MMM".to_string(), "ZZZ".to_string()]
+        );
+    }
+
+    #[test]
+    fn save_with_key_persists_without_second_unlock() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("key.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes("svc", &[("TOKEN".into(), "t1".into())])
+            .unwrap();
+        vault.save_with_key(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
     }
 }

@@ -15,7 +15,7 @@ pub fn execute(entry: String, keys_only: bool, reveal: bool) -> i32 {
 }
 
 fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
-    let (cfg, _ctx, vault) = unlock_vault(OpenMode::ReadOnly)?;
+    let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let id = vault.find_entry_by_title(entry)?;
     let keys = vault.entry_custom_keys(id);
 

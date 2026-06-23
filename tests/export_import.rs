@@ -308,3 +308,29 @@ fn import_dotenv_roundtrip() {
         .success()
         .stdout(predicates::str::contains("ghp_secret"));
 }
+
+#[test]
+fn import_dotenv_trims_value_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let import_file = dir.path().join("trim.env");
+
+    let ctx = UnlockContext { keyfile: None };
+    let key = build_database_key(&ctx, "pass").unwrap();
+    create_vault(&db, key, "kprun").unwrap();
+
+    std::fs::write(&import_file, "# trimtest\nTRIM_KEY= value \n").unwrap();
+
+    kprun()
+        .envs(env_for(&db))
+        .args(["import", import_file.to_str().unwrap(), "--merge"])
+        .assert()
+        .success();
+
+    kprun()
+        .envs(env_for(&db))
+        .args(["get", "trimtest", "--reveal"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("TRIM_KEY=value"));
+}

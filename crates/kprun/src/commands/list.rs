@@ -21,7 +21,7 @@ pub fn execute(json: bool) -> i32 {
 }
 
 fn run(json: bool) -> Result<()> {
-    let (_cfg, _ctx, vault) = unlock_vault(OpenMode::ReadOnly)?;
+    let (_cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let entries = vault.list_entries();
 
     if json {

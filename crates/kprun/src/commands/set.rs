@@ -17,8 +17,8 @@ pub fn execute(entry: String, pairs: Vec<String>) -> i32 {
 fn run(entry: &str, pair_args: &[String]) -> Result<()> {
     let items: Vec<&str> = pair_args.iter().map(String::as_str).collect();
     let pairs = parse_key_vals(items)?;
-    let (_cfg, ctx, mut vault) = unlock_vault(OpenMode::ReadWrite)?;
+    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     vault.set_attributes(entry, &pairs)?;
-    vault.save_with_unlock(&ctx)?;
+    vault.save_with_key(db_key)?;
     Ok(())
 }
