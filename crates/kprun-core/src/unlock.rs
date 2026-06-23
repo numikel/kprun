@@ -36,6 +36,7 @@ pub struct PromptUnlock;
 
 impl MasterPasswordSource for PromptUnlock {
     fn get_master(&self) -> Result<Zeroizing<String>> {
+        #[cfg(feature = "test-hooks")]
         if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
             return Ok(Zeroizing::new(pw));
         }
@@ -66,6 +67,7 @@ pub fn unlock_master(
 
 pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
     // Test hook must override keyring so integration tests stay deterministic locally.
+    #[cfg(feature = "test-hooks")]
     if std::env::var("KPRUN_TEST_MASTER").is_ok() {
         return unlock_master(ctx, &PromptUnlock);
     }
