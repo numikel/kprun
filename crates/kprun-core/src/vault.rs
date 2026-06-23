@@ -201,12 +201,14 @@ fn is_standard_field(name: &str) -> bool {
 }
 
 fn custom_field_names(entry: &EntryRef<'_>) -> Vec<String> {
-    entry
+    let mut keys: Vec<String> = entry
         .fields
         .keys()
         .filter(|k| !is_standard_field(k))
         .cloned()
-        .collect()
+        .collect();
+    keys.sort_unstable();
+    keys
 }
 
 fn custom_fields(entry: &EntryRef<'_>) -> HashMap<String, String> {
@@ -301,6 +303,36 @@ mod tests {
 
         let err = vault.save(key).unwrap_err();
         assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
+    }
+
+    #[test]
+    fn custom_field_names_are_sorted_alphabetically() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sort.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes(
+                "svc",
+                &[
+                    ("ZZZ".into(), "z".into()),
+                    ("AAA".into(), "a".into()),
+                    ("MMM".into(), "m".into()),
+                ],
+            )
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let keys = vault2.entry_custom_keys(id);
+        assert_eq!(
+            keys,
+            vec!["AAA".to_string(), "MMM".to_string(), "ZZZ".to_string()]
+        );
     }
 
     #[test]
