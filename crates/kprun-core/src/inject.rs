@@ -10,16 +10,23 @@ pub struct InjectResult {
     pub entries: Vec<String>,
 }
 
+fn collision_warning_message(key: &str, entry: &str) -> String {
+    format!("warning: key '{key}' from entry '{entry}' overrides an earlier value")
+}
+
 pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<InjectResult> {
     let mut env = HashMap::new();
     let mut injected_keys = Vec::new();
+    let mut seen_keys = std::collections::HashSet::new();
     for name in entry_names {
         let id = vault.find_entry_by_title(name)?;
         for (k, v) in vault.entry_custom_values(id) {
             if env.insert(k.clone(), v).is_some() {
-                // later entry overrides — document behavior
+                eprintln!("{}", collision_warning_message(&k, name));
             }
-            injected_keys.push(k);
+            if seen_keys.insert(k.clone()) {
+                injected_keys.push(k);
+            }
         }
     }
     Ok(InjectResult {
@@ -31,7 +38,7 @@ pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<Inject
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_injection;
+    use super::{collision_warning_message, resolve_injection};
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::vault::{open_vault, OpenMode};
     use crate::{KprunError, Result};
@@ -76,6 +83,37 @@ mod tests {
         assert_eq!(
             result.injected_keys,
             vec!["OPENAI_API_KEY".to_string(), "DATABASE_URL".to_string()]
+        );
+    }
+
+    #[test]
+    fn warns_on_key_collision() {
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("collision.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "entry_a");
+            e.set_unprotected("SHARED_KEY", "value_a");
+        });
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "entry_b");
+            e.set_unprotected("SHARED_KEY", "value_b");
+        });
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        let mut file = std::fs::File::create(&db_path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
+        let names = vec!["entry_a".into(), "entry_b".into()];
+        let result = resolve_injection(&vault, &names).unwrap();
+
+        assert_eq!(result.env["SHARED_KEY"], "value_b");
+        assert_eq!(result.injected_keys, vec!["SHARED_KEY".to_string()]);
+        assert_eq!(
+            collision_warning_message("SHARED_KEY", "entry_b"),
+            "warning: key 'SHARED_KEY' from entry 'entry_b' overrides an earlier value"
         );
     }
 }
