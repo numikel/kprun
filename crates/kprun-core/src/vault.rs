@@ -83,6 +83,13 @@ pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Re
 }
 
 impl Vault {
+    fn require_rw(&self) -> Result<()> {
+        if self.mode != OpenMode::ReadWrite {
+            return Err(KprunError::Other("vault opened read-only".into()));
+        }
+        Ok(())
+    }
+
     pub fn find_entry_by_title(&self, title: &str) -> Result<EntryId> {
         let title_lower = title.to_ascii_lowercase();
         for entry in self.db.iter_all_entries() {
@@ -123,10 +130,7 @@ impl Vault {
     }
 
     pub fn set_attributes(&mut self, title: &str, pairs: &[(String, String)]) -> Result<()> {
-        let mode_check = self.mode == OpenMode::ReadWrite;
-        if !mode_check {
-            return Err(KprunError::Other("vault opened read-only".into()));
-        }
+        self.require_rw()?;
         let title_owned = title.to_string();
         let result = self.find_entry_by_title(&title_owned);
         match result {
@@ -152,6 +156,7 @@ impl Vault {
     }
 
     pub fn unset_attributes(&mut self, title: &str, keys: &[String]) -> Result<()> {
+        self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
         if let Some(mut entry) = self.db.entry_mut(id) {
             for k in keys {
@@ -162,6 +167,7 @@ impl Vault {
     }
 
     pub fn delete_entry(&mut self, title: &str) -> Result<()> {
+        self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
         if let Some(entry) = self.db.entry_mut(id) {
             entry.remove();
@@ -172,6 +178,7 @@ impl Vault {
     }
 
     pub fn save(&mut self, key: keepass::DatabaseKey) -> Result<()> {
+        self.require_rw()?;
         let mut tmp =
             tempfile::NamedTempFile::new_in(self.path.parent().unwrap_or_else(|| Path::new(".")))?;
         self.db
@@ -224,6 +231,7 @@ fn map_save_error(e: impl std::fmt::Display) -> KprunError {
 mod tests {
     use super::*;
     use crate::unlock::{build_database_key, UnlockContext};
+    use crate::KprunError;
     use keepass::db::fields;
     use tempfile::tempdir;
 
@@ -275,5 +283,23 @@ mod tests {
             vals.get("OPENAI_API_KEY").map(String::as_str),
             Some("sk-test")
         );
+    }
+
+    #[test]
+    fn read_only_vault_rejects_write_operations() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ro.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadOnly).unwrap();
+        let err = vault
+            .unset_attributes("missing", &["KEY".into()])
+            .unwrap_err();
+        assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
+
+        let err = vault.save(key).unwrap_err();
+        assert!(matches!(err, KprunError::Other(msg) if msg == "vault opened read-only"));
     }
 }
