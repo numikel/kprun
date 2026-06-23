@@ -7,5 +7,5 @@ fn prints_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicates::str::contains("0.1.1"));
+        .stdout(predicates::str::contains("0.1.2"));
 }
