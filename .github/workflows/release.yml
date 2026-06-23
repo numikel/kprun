@@ -94,7 +94,7 @@ jobs:
           Copy-Item "$release/kprun.exe" "staging/kprun.exe"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kprun-${{ matrix.target }}
           path: staging/
