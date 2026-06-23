@@ -56,3 +56,7 @@ path = "../../tests/doctor.rs"
 [[test]]
 name = "keepassxc_compat"
 path = "../../tests/keepassxc_compat.rs"
+
+[features]
+default = []
+test-hooks = ["kprun-core/test-hooks"]
