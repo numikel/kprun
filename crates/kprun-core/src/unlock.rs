@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use keepass::DatabaseKey;
 use keyring::v1::Entry;
@@ -113,7 +113,7 @@ pub fn keystore_has_master() -> bool {
         .is_ok()
 }
 
-pub fn generate_keyfile(path: &PathBuf) -> Result<()> {
+pub fn generate_keyfile(path: &Path) -> Result<()> {
     use rand::Rng;
     let mut bytes = [0u8; 64];
     rand::rng().fill_bytes(&mut bytes);
