@@ -49,6 +49,7 @@ impl Vault {
         &self.db
     }
 
+    #[expect(dead_code)]
     pub(crate) fn database_mut(&mut self) -> &mut Database {
         &mut self.db
     }
