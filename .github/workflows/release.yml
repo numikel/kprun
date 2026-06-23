@@ -126,7 +126,7 @@ jobs:
           sha256sum * > checksums.txt
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: docs/changelogs/v${{ env.VERSION }}.md
           generate_release_notes: false
