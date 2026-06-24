@@ -75,7 +75,7 @@ mod tests {
     use crate::vault::{open_vault, OpenMode};
     use crate::{KprunError, Result};
     use keepass::db::fields;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
     fn create_test_vault(path: &Path, password: &str) -> Result<()> {
@@ -89,7 +89,10 @@ mod tests {
             e.set_unprotected(fields::TITLE, "postgres");
             e.set_unprotected("DATABASE_URL", "postgres://user:pass@localhost/db");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, password)?;
         let mut file = std::fs::File::create(path)?;
         db.save(&mut file, key)
@@ -101,7 +104,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
         create_test_vault(&db_path, "pass").unwrap();
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let names = vec!["openai".into(), "postgres".into()];
@@ -129,7 +135,10 @@ mod tests {
             e.set_unprotected("PATH", "/evil/bin");
             e.set_unprotected("SAFE_KEY", "ok");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
         db.save(&mut file, key.clone()).unwrap();
@@ -155,7 +164,10 @@ mod tests {
             e.set_unprotected(fields::TITLE, "entry_b");
             e.set_unprotected("SHARED_KEY", "value_b");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
         db.save(&mut file, key.clone()).unwrap();

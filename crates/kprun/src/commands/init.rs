@@ -36,6 +36,7 @@ fn run(db: Option<String>, no_store: bool, keyfile: Option<String>) -> Result<()
 
     let ctx = UnlockContext {
         keyfile: keyfile_path,
+        db_path: db_path.clone(),
     };
 
     if db_path.exists() {
@@ -52,7 +53,7 @@ fn verify_existing(ctx: &UnlockContext, db_path: &Path, no_store: bool) -> Resul
     let _vault = open_vault(db_path, db_key, OpenMode::ReadOnly)?;
 
     if !no_store {
-        store_master_in_keystore(&master)?;
+        store_master_in_keystore(db_path, &master)?;
         eprintln!("Master password stored in OS keychain.");
     }
 
@@ -69,7 +70,7 @@ fn create_new(cfg: &Config, db_path: &Path, ctx: &UnlockContext, no_store: bool)
     eprintln!("Created KeePass database at {}", db_path.display());
 
     if !no_store {
-        store_master_in_keystore(&master)?;
+        store_master_in_keystore(db_path, &master)?;
         eprintln!("Master password stored in OS keychain.");
     }
 

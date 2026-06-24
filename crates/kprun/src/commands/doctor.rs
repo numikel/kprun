@@ -30,6 +30,7 @@ fn print_diagnostics() -> Result<()> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
 
     if cfg.db_path.exists() {
@@ -46,7 +47,7 @@ fn print_diagnostics() -> Result<()> {
     let _vault = open_vault(&cfg.db_path, db_key, OpenMode::ReadOnly)?;
     println!("unlock: ok");
 
-    let keystore = if keystore_has_master() {
+    let keystore = if keystore_has_master(&cfg.db_path) {
         "present"
     } else {
         "absent"

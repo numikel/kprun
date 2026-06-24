@@ -5,6 +5,7 @@ use kprun_core::Result;
 
 use crate::cli::Commands;
 
+mod deinit;
 mod delete;
 mod doctor;
 mod export;
@@ -45,6 +46,7 @@ pub fn dispatch(command: Commands) {
         } => std::process::exit(export::execute(format, stdout, reveal, output)),
         Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
         Commands::Doctor { mcp } => std::process::exit(doctor::execute(mcp)),
+        Commands::Deinit => std::process::exit(deinit::execute()),
     }
 }
 
@@ -52,6 +54,7 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
     let master = unlock_with_fallback(&ctx)?;
     let db_key = build_database_key(&ctx, &master)?;

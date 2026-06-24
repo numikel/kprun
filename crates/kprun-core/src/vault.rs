@@ -248,7 +248,10 @@ mod tests {
             e.set_unprotected(fields::TITLE, "github");
             e.set_unprotected("GITHUB_TOKEN", "ghp_test");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, password)?;
         let mut file = std::fs::File::create(path)?;
         db.save(&mut file, key)
@@ -260,7 +263,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
         create_test_vault(&db_path, "pass").unwrap();
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let id = vault.find_entry_by_title("GitHub").unwrap();
@@ -272,7 +278,10 @@ mod tests {
     fn set_attributes_persists_after_reopen() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("w.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -295,7 +304,10 @@ mod tests {
     fn set_attributes_stores_protected_values() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("prot.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -316,7 +328,10 @@ mod tests {
     fn read_only_vault_rejects_write_operations() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("ro.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -334,7 +349,10 @@ mod tests {
     fn custom_field_names_are_sorted_alphabetically() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("sort.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -364,7 +382,10 @@ mod tests {
     fn save_with_key_persists_without_second_unlock() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("key.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -392,7 +413,10 @@ mod tests {
         db.root_mut().add_entry().edit(|e| {
             e.set_unprotected(fields::TITLE, "DUP");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let mut file = std::fs::File::create(&path).unwrap();
         db.save(&mut file, key.clone()).unwrap();
@@ -408,7 +432,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
         let path = dir.path().join("perm.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key, "kprun").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
