@@ -8,8 +8,8 @@ use serde_json::json;
 
 use crate::ui;
 
-pub fn execute(mcp: Option<String>) -> i32 {
-    match run(mcp) {
+pub fn execute(mcp: Option<String>, command: Vec<String>) -> i32 {
+    match run(mcp, command) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("error: {e}");
@@ -18,10 +18,16 @@ pub fn execute(mcp: Option<String>) -> i32 {
     }
 }
 
-fn run(mcp: Option<String>) -> Result<()> {
+fn run(mcp: Option<String>, command: Vec<String>) -> Result<()> {
     if let Some(entry) = mcp {
-        print_mcp_fragment(&entry)?;
+        print_mcp_fragment(&entry, &command)?;
         return Ok(());
+    }
+
+    if !command.is_empty() {
+        return Err(kprun_core::KprunError::Other(
+            "child command requires --mcp <entry>".into(),
+        ));
     }
 
     print_diagnostics()?;
@@ -73,14 +79,18 @@ fn print_diagnostics() -> Result<()> {
     Ok(())
 }
 
-fn print_mcp_fragment(entry: &str) -> Result<()> {
-    if entry == "github" {
+fn print_mcp_fragment(entry: &str, child_command: &[String]) -> Result<()> {
+    if entry == "github" && child_command.is_empty() {
         eprintln!(
             "NOTE: npx auto-install without a lockfile is a supply-chain risk; pin the MCP server version in production."
         );
+    } else if child_command.is_empty() {
+        eprintln!(
+            "NOTE: append your MCP server command after `--`, e.g. kprun doctor --mcp {entry} -- npx -y @org/mcp-server"
+        );
     }
     let command = mcp_command()?;
-    let args = mcp_args(entry);
+    let args = mcp_args(entry, child_command);
     let fragment = json!({
         "command": command,
         "args": args,
@@ -100,16 +110,18 @@ fn mcp_command() -> Result<String> {
     Ok(exe.display().to_string())
 }
 
-fn mcp_args(entry: &str) -> Vec<String> {
-    match entry {
-        "github" => vec![
-            "run".into(),
-            "github".into(),
-            "--".into(),
-            "npx".into(),
-            "-y".into(),
-            "@modelcontextprotocol/server-github@2025.4.8".into(),
-        ],
-        other => vec!["run".into(), other.to_string(), "--".into()],
+fn mcp_args(entry: &str, child_command: &[String]) -> Vec<String> {
+    let mut args = vec!["run".into(), entry.to_string(), "--".into()];
+    if child_command.is_empty() {
+        if entry == "github" {
+            args.extend([
+                "npx".into(),
+                "-y".into(),
+                "@modelcontextprotocol/server-github@2025.4.8".into(),
+            ]);
+        }
+    } else {
+        args.extend(child_command.iter().cloned());
     }
+    args
 }

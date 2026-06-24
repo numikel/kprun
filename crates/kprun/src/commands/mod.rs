@@ -45,7 +45,7 @@ pub fn dispatch(command: Commands) {
             output,
         } => std::process::exit(export::execute(format, stdout, reveal, output)),
         Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
-        Commands::Doctor { mcp } => std::process::exit(doctor::execute(mcp)),
+        Commands::Doctor { mcp, command } => std::process::exit(doctor::execute(mcp, command)),
         Commands::Deinit => std::process::exit(deinit::execute()),
     }
 }

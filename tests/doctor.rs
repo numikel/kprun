@@ -88,3 +88,61 @@ fn doctor_mcp_github_prints_json_fragment() {
         assert_eq!(args[i].as_str(), Some(*expected));
     }
 }
+
+#[test]
+fn doctor_mcp_generic_entry_prints_placeholder_args() {
+    let assert = kprun()
+        .args(["doctor", "--mcp", "openai"])
+        .assert()
+        .success()
+        .stderr(predicates::str::contains(
+            "kprun doctor --mcp openai -- npx -y @org/mcp-server",
+        ));
+
+    let value: Value =
+        serde_json::from_slice(&assert.get_output().stdout).expect("stdout must be valid JSON");
+    let args = value
+        .get("args")
+        .and_then(Value::as_array)
+        .expect("args field");
+    assert_eq!(
+        args.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+        vec!["run", "openai", "--"]
+    );
+}
+
+#[test]
+fn doctor_mcp_with_child_command_prints_full_args() {
+    let output = kprun()
+        .args([
+            "doctor",
+            "--mcp",
+            "qdrant",
+            "--",
+            "npx",
+            "-y",
+            "@modelcontextprotocol/server-qdrant",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let value: Value = serde_json::from_slice(&output).expect("stdout must be valid JSON");
+    let args = value
+        .get("args")
+        .and_then(Value::as_array)
+        .expect("args field");
+    assert_eq!(
+        args.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+        vec![
+            "run",
+            "qdrant",
+            "--",
+            "npx",
+            "-y",
+            "@modelcontextprotocol/server-qdrant"
+        ]
+    );
+}

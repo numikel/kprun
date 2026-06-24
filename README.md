@@ -5,6 +5,8 @@
 ![Rust](https://img.shields.io/badge/Rust-1.88.0-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
+![kprun demo](docs/kprun.gif)
+
 **Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
 
 [Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md) · [Install](#installation) · [Quick start](#quick-start) · [MCP integration](#mcp-integration) · [Security model](#security-model)
@@ -259,6 +261,14 @@ Generate a ready-to-paste fragment:
 ```bash
 kprun doctor --mcp github
 ```
+
+For other entries, append the MCP server command after `--`:
+
+```bash
+kprun doctor --mcp qdrant -- npx -y @modelcontextprotocol/server-qdrant
+```
+
+Without a child command, generic entries emit `["run", "<entry>", "--"]` and a stderr hint — paste the server command into `args` manually or re-run with `--`.
 
 After editing MCP config, check `git diff` — some tools may write secrets back to disk.
 
