@@ -117,9 +117,9 @@ fn export_dotenv_formats_blocks() {
         .stdout
         .clone();
     let revealed_text = String::from_utf8_lossy(&revealed);
-    assert!(revealed_text.contains("GITHUB_TOKEN=ghp_secret"));
+    assert!(revealed_text.contains("GITHUB_TOKEN=\"ghp_secret\""));
     assert!(revealed_text.contains("# postgres"));
-    assert!(revealed_text.contains("DATABASE_URL=postgres://local"));
+    assert!(revealed_text.contains("DATABASE_URL=\"postgres://local\""));
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn import_dotenv_roundtrip() {
         .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("GITHUB_TOKEN=ghp_secret"));
+        .stdout(predicates::str::contains("GITHUB_TOKEN=\"ghp_secret\""));
 
     let exported = kprun()
         .envs(env_for(&db))

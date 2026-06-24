@@ -62,6 +62,9 @@ pub enum Commands {
         stdout: bool,
         #[arg(long)]
         reveal: bool,
+        /// Write to this path instead of the default kprun-export.* in the current directory.
+        #[arg(long)]
+        output: Option<String>,
     },
     Import {
         file: String,

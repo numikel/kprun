@@ -9,8 +9,8 @@ use crate::cli::ExportFormat;
 
 use super::unlock_vault;
 
-pub fn execute(format: ExportFormat, stdout: bool, reveal: bool) -> i32 {
-    match run(format, stdout, reveal) {
+pub fn execute(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> i32 {
+    match run(format, stdout, reveal, output) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("error: {e}");
@@ -19,7 +19,7 @@ pub fn execute(format: ExportFormat, stdout: bool, reveal: bool) -> i32 {
     }
 }
 
-fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
+fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> Result<()> {
     let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let summaries = vault.list_entries();
 
@@ -27,7 +27,7 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
         eprintln!("WARNING: secret values are displayed in the terminal");
     }
 
-    let output = match format {
+    let output_str = match format {
         ExportFormat::Json => export_json(&vault, &summaries, reveal)?,
         ExportFormat::Dotenv => export_dotenv(&vault, &summaries, reveal)?,
     };
@@ -43,17 +43,22 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
 
     if stdout {
         let mut out = io::stdout().lock();
-        out.write_all(output.as_bytes())?;
-        if !output.ends_with('\n') {
+        out.write_all(output_str.as_bytes())?;
+        if !output_str.ends_with('\n') {
             out.write_all(b"\n")?;
         }
     } else {
-        let path = default_export_path(format);
-        kprun_core::secure_fs::write_restricted(&path, output.as_bytes())?;
-        eprintln!(
-            "wrote export to {} (permissions restricted to owner)",
-            path.display()
-        );
+        let path = output
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| default_export_path(format));
+        if reveal {
+            eprintln!(
+                "WARNING: writing plaintext secrets to {} (permissions restricted to owner)",
+                path.display()
+            );
+        }
+        kprun_core::secure_fs::write_restricted(&path, output_str.as_bytes())?;
+        eprintln!("wrote export to {}", path.display());
     }
 
     Ok(())
@@ -107,7 +112,11 @@ fn export_dotenv(
             let values = vault.entry_custom_values(id);
             for key in &summary.keys {
                 if let Some(value) = values.get(key) {
-                    lines.push(format!("{key}={value}"));
+                    let escaped = value
+                        .replace('\\', "\\\\")
+                        .replace('\n', "\\n")
+                        .replace('\r', "\\r");
+                    lines.push(format!("{key}=\"{escaped}\""));
                 }
             }
         } else {
@@ -119,4 +128,30 @@ fn export_dotenv(
     }
 
     Ok(blocks.join("\n\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kprun_core::unlock::{build_database_key, UnlockContext};
+    use kprun_core::vault::{create_vault, open_vault, OpenMode};
+    use tempfile::tempdir;
+
+    #[test]
+    fn dotenv_export_escapes_newlines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("e.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+        let mut v = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        v.set_attributes("svc", &[("MULTI".into(), "line1\nline2".into())])
+            .unwrap();
+        v.save(key.clone()).unwrap();
+
+        let v2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let summaries = v2.list_entries();
+        let out = export_dotenv(&v2, &summaries, true).unwrap();
+        assert!(out.contains("MULTI=\"line1\\nline2\""));
+    }
 }
