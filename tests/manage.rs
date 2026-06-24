@@ -75,6 +75,26 @@ fn get_reveal_audits_access() {
 }
 
 #[test]
+fn get_keys_audits_access() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_openai_vault(&db);
+
+    kprun()
+        .env("KPRUN_DB", db.to_str().unwrap())
+        .env("KPRUN_LOG", log.to_str().unwrap())
+        .env("KPRUN_TEST_MASTER", "pass")
+        .args(["get", "openai", "--keys"])
+        .assert()
+        .success();
+
+    let log_content = std::fs::read_to_string(&log).unwrap();
+    assert!(log_content.contains("openai"));
+    assert!(log_content.contains("OPENAI_API_KEY"));
+}
+
+#[test]
 fn set_unset_delete_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");

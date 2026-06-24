@@ -23,6 +23,15 @@ fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
         for k in &keys {
             println!("{k}");
         }
+        log_access(
+            &cfg,
+            &AuditRecord::new(
+                cfg.db_path.clone(),
+                vec![entry.to_string()],
+                keys.clone(),
+                None,
+            ),
+        )?;
         return Ok(());
     }
 
