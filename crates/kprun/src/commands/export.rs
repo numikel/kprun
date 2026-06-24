@@ -49,8 +49,8 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
         }
     } else {
         let path = default_export_path(format);
-        std::fs::write(&path, &output)?;
-        eprintln!("wrote export to {}", path.display());
+        kprun_core::secure_fs::write_restricted(&path, output.as_bytes())?;
+        eprintln!("wrote export to {} (permissions restricted to owner)", path.display());
     }
 
     Ok(())
