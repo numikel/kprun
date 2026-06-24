@@ -1859,7 +1859,7 @@ gh pr create --title "feat(cli): keychain lifecycle (BREAKING)" --body "Implemen
 **Files:**
 - Modify: `crates/kprun/src/commands/get.rs:22-27`
 
-- [ ] **Step 1: Add an audit record in the `keys_only` branch:**
+- [x] **Step 1: Add an audit record in the `keys_only` branch:**
 
 ```rust
     if keys_only {
@@ -1874,12 +1874,12 @@ gh pr create --title "feat(cli): keychain lifecycle (BREAKING)" --body "Implemen
     }
 ```
 
-- [ ] **Step 2: Build + run get tests.**
+- [x] **Step 2: Build + run get tests.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/get.rs
@@ -1891,11 +1891,11 @@ git commit -m "feat(cli): record audit entry for get --keys (Bugbot)"
 **Files:**
 - Modify: `crates/kprun/src/commands/doctor.rs:89-98`
 
-- [ ] **Step 1: Read the doctor MCP suggestion block.**
+- [x] **Step 1: Read the doctor MCP suggestion block.**
 
 Run: open `crates/kprun/src/commands/doctor.rs`.
 
-- [ ] **Step 2: Replace the `npx -y @modelcontextprotocol/server-github` suggestion** with a version-pinned form and a note about lockfile/pinning, e.g. `npx -y @modelcontextprotocol/server-github@<pinned-version>` plus a printed caution that auto-install without a lockfile is a supply-chain risk. Use the current pinned version (look it up):
+- [x] **Step 2: Replace the `npx -y @modelcontextprotocol/server-github` suggestion** with a version-pinned form and a note about lockfile/pinning, e.g. `npx -y @modelcontextprotocol/server-github@<pinned-version>` plus a printed caution that auto-install without a lockfile is a supply-chain risk. Use the current pinned version (look it up):
 
 ```powershell
 (Invoke-RestMethod https://registry.npmjs.org/-/package/@modelcontextprotocol/server-github/dist-tags).latest
@@ -1903,12 +1903,12 @@ Run: open `crates/kprun/src/commands/doctor.rs`.
 
 Embed that exact version in the suggestion string.
 
-- [ ] **Step 3: Build.**
+- [x] **Step 3: Build.**
 
 Run: `cargo build -p kprun`
 Expected: clean.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/doctor.rs
@@ -1920,14 +1920,14 @@ git commit -m "fix(cli): pin npx MCP server version in doctor suggestion (L-2)"
 **Files:**
 - Modify: `crates/kprun/src/commands/doctor.rs:36-38`, `crates/kprun/src/commands/init.rs:30,47,67`
 
-- [ ] **Step 1: Review each `eprintln!`/error that prints a full path** in those locations. For user-facing operational hints keep paths (they are intentional UX), but for error contexts that may be logged, print only the file name via `Path::file_name()`. Decide per line; conservative change: in `doctor.rs:36-38` error branch, replace `path.display()` with `path.file_name().map(|f| f.to_string_lossy()).unwrap_or_default()`.
+- [x] **Step 1: Review each `eprintln!`/error that prints a full path** in those locations. For user-facing operational hints keep paths (they are intentional UX), but for error contexts that may be logged, print only the file name via `Path::file_name()`. Decide per line; conservative change: in `doctor.rs:36-38` error branch, replace `path.display()` with `path.file_name().map(|f| f.to_string_lossy()).unwrap_or_default()`.
 
-- [ ] **Step 2: Build + doctor test.**
+- [x] **Step 2: Build + doctor test.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/doctor.rs crates/kprun/src/commands/init.rs
@@ -1939,7 +1939,7 @@ git commit -m "fix(cli): avoid leaking full paths in error output (L-3)"
 **Files:**
 - Modify: `crates/kprun-core/src/unlock.rs:52-59`
 
-- [ ] **Step 1: Feature-gate `FixedUnlock`** so it is not part of the public API in release builds:
+- [x] **Step 1: Feature-gate `FixedUnlock`** so it is not part of the public API in release builds:
 
 ```rust
 /// Test helper — production code uses SystemUnlock then PromptUnlock fallback.
@@ -1954,14 +1954,14 @@ impl MasterPasswordSource for FixedUnlock {
 }
 ```
 
-- [ ] **Step 2: Move/guard its test.** The `fixed_unlock_returns_password` test must also be gated; wrap it in `#[cfg(feature = "test-hooks")]`.
+- [x] **Step 2: Move/guard its test.** The `fixed_unlock_returns_password` test must also be gated; wrap it in `#[cfg(feature = "test-hooks")]`.
 
-- [ ] **Step 3: Build both ways.**
+- [x] **Step 3: Build both ways.**
 
 Run: `cargo build -p kprun-core`; `cargo test -p kprun-core --all-features`
 Expected: default build excludes `FixedUnlock`; all-features build runs its test.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun-core/src/unlock.rs
@@ -1973,7 +1973,7 @@ git commit -m "refactor(core): gate FixedUnlock behind test-hooks feature (code-
 **Files:**
 - Modify: `crates/kprun/src/commands/import.rs:179`
 
-- [ ] **Step 1: Decide policy.** L-1 flags that `value.trim()` silently alters secrets with intentional surrounding whitespace. Now that Phase 4 quotes/escapes exported values, change import to preserve inner whitespace of quoted values while still trimming unquoted ones. Implement: if the value is wrapped in double quotes, strip the quotes and unescape `\\n`/`\\r`/`\\\\` without trimming; otherwise keep the existing `.trim()`:
+- [x] **Step 1: Decide policy.** L-1 flags that `value.trim()` silently alters secrets with intentional surrounding whitespace. Now that Phase 4 quotes/escapes exported values, change import to preserve inner whitespace of quoted values while still trimming unquoted ones. Implement: if the value is wrapped in double quotes, strip the quotes and unescape `\\n`/`\\r`/`\\\\` without trimming; otherwise keep the existing `.trim()`:
 
 ```rust
         if let Some((key, value)) = line.split_once('=') {
@@ -2000,7 +2000,7 @@ git commit -m "refactor(core): gate FixedUnlock behind test-hooks feature (code-
         } else {
 ```
 
-- [ ] **Step 2: Write a round-trip test** (export with newline → import → value preserved). Add to `import.rs` tests (create module if needed) using the `parse_dotenv_import` directly:
+- [x] **Step 2: Write a round-trip test** (export with newline → import → value preserved). Add to `import.rs` tests (create module if needed) using the `parse_dotenv_import` directly:
 
 ```rust
 #[cfg(test)]
@@ -2017,12 +2017,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Run tests.**
+- [x] **Step 3: Run tests.**
 
 Run: `cargo test -p kprun imports_quoted_value_with_escaped_newline`
 Expected: pass.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/import.rs
@@ -2034,9 +2034,9 @@ git commit -m "fix(cli): preserve quoted dotenv values on import (L-1)"
 **Files:**
 - Modify: `README.md:163`, `SECURITY.md`
 
-- [ ] **Step 1: Fix `README.md` `KPRUN_TEST_MASTER` docs** to state it only works in builds with `--features test-hooks` and is absent from GitHub Release binaries. (L-4)
+- [x] **Step 1: Fix `README.md` `KPRUN_TEST_MASTER` docs** to state it only works in builds with `--features test-hooks` and is absent from GitHub Release binaries. (L-4)
 
-- [ ] **Step 2: Expand `SECURITY.md`** with sections (sentence-case headings):
+- [x] **Step 2: Expand `SECURITY.md`** with sections (sentence-case headings):
   - "File permissions" — owner-only on Unix/Windows (Phase 1).
   - "Keychain storage" — master password stored as plaintext in the OS keychain; per-vault keying; `kprun deinit` to remove.
   - "Process environment exposure" — injected secrets visible in `/proc/<pid>/environ`, Process Explorer, `ps e`; `--clean-env` available.
@@ -2061,7 +2061,7 @@ RWQ...   # paste the real public key produced during the key ceremony
 
   - "test-hooks scope" — `KPRUN_TEST_MASTER` only in `--features test-hooks` builds.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add README.md SECURITY.md
@@ -2070,7 +2070,7 @@ git commit -m "docs: document security model and release verification (L-4)"
 
 ### Task 7.7: Changelog + PR + release
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Low priority
@@ -2087,12 +2087,12 @@ git commit -m "docs: document security model and release verification (L-4)"
 - SECURITY.md documents file permissions, keychain storage, process env exposure, and minisign release verification.
 ```
 
-- [ ] **Step 2: Final verification.**
+- [x] **Step 2: Final verification.**
 
 Run: `cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
 Expected: clean.
 
-- [ ] **Step 3: Push + PR.**
+- [x] **Step 3: Push + PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
