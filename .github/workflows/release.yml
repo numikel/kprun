@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,8 +15,10 @@ jobs:
   validate:
     name: Validate release metadata
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Parse version from tag
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
       - name: Require per-version changelog
@@ -35,6 +37,8 @@ jobs:
     name: Build ${{ matrix.target }}
     needs: validate
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -58,10 +62,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: 1.88.0
           targets: ${{ matrix.target }}
@@ -94,7 +98,7 @@ jobs:
           Copy-Item "$release/kprun.exe" "staging/kprun.exe"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kprun-${{ matrix.target }}
           path: staging/
@@ -103,15 +107,19 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      HAS_MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY != '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Parse version from tag
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
 
@@ -125,9 +133,32 @@ jobs:
           cd release
           sha256sum * > checksums.txt
 
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+
+      - name: Sign checksums with minisign
+        if: ${{ env.HAS_MINISIGN_KEY == 'true' }}
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile="$(mktemp)"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s' "$MINISIGN_SECRET_KEY" > "$keyfile"
+          printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -H \
+            -m release/checksums.txt \
+            -s "$keyfile" \
+            -t "kprun ${VERSION} signed"
+
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           body_path: docs/changelogs/v${{ env.VERSION }}.md
           generate_release_notes: false
-          files: release/*
+          files: |
+            release/*
+            release/checksums.txt.minisig

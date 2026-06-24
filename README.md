@@ -160,7 +160,7 @@ Verifies unlock and optionally stores the master password in the OS keychain. Do
 | `KPRUN_NO_MODIFY_PATH` | unset | Set to `1` to skip shell PATH updates |
 | `KPRUN_SKIP_CHECKSUM` | unset | Set to `1` to skip install checksum verify |
 | `KPRUN_VERSION` | latest release | Pin install script version |
-| `KPRUN_TEST_MASTER` | — | Test hook: fixed master password (automation only) |
+| `KPRUN_TEST_MASTER` | — | Test hook (only in builds compiled with `--features test-hooks`; not present in GitHub Release binaries): fixed master password for automation |
 
 Install script env vars are documented in `scripts/install.sh` and `scripts/install.ps1`.
 
@@ -177,6 +177,7 @@ kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
 kprun import <file> [--merge]
 kprun doctor [--mcp <entry>]
+kprun deinit
 ```
 
 Notes:

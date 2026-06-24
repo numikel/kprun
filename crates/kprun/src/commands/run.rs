@@ -7,8 +7,8 @@ use kprun_core::Result;
 
 use crate::spawn::run_child;
 
-pub fn execute(entries: Vec<String>, command: Vec<String>) -> i32 {
-    match run_inner(entries, command) {
+pub fn execute(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> i32 {
+    match run_inner(entries, command, clean_env) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e}");
@@ -17,10 +17,11 @@ pub fn execute(entries: Vec<String>, command: Vec<String>) -> i32 {
     }
 }
 
-fn run_inner(entries: Vec<String>, command: Vec<String>) -> Result<i32> {
+fn run_inner(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> Result<i32> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
 
     let master = unlock_with_fallback(&ctx)?;
@@ -44,6 +45,6 @@ fn run_inner(entries: Vec<String>, command: Vec<String>) -> Result<i32> {
         ),
     )?;
 
-    let code = run_child(&command, &injection.env)?;
+    let code = run_child(&command, &injection.env, clean_env)?;
     Ok(code)
 }

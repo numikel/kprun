@@ -79,8 +79,8 @@ verify_checksum() {
   ARCHIVE="$2"
   CHECKSUMS="$3"
 
-  if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ]; then
-    warn "KPRUN_SKIP_CHECKSUM=1 set — SKIPPING checksum verification (NOT RECOMMENDED)"
+  if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ] && [ "${KPRUN_DEV:-0}" = "1" ]; then
+    warn "WARNING: checksum verification skipped (developer mode)"
     return
   fi
 
@@ -103,6 +103,22 @@ verify_checksum() {
   fi
 
   info "Checksum verified."
+
+  # Optional minisign verification (defense in depth on top of SHA-256).
+  KPRUN_MINISIGN_PUBKEY="RWQ..."   # published kprun release public key (replace during key ceremony)
+  MINISIG="${CHECKSUMS}.minisig"
+  if [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1; then
+    if [ -f "$MINISIG" ]; then
+      PUBFILE="$(mktemp)"
+      printf '%s\n' "$KPRUN_MINISIGN_PUBKEY" > "$PUBFILE"
+      if ! minisign -V -p "$PUBFILE" -m "$CHECKSUMS"; then
+        rm -f "$PUBFILE"
+        error "minisign signature verification failed"
+      fi
+      rm -f "$PUBFILE"
+      info "minisign signature verified"
+    fi
+  fi
 }
 
 verify_archive_paths() {
@@ -164,12 +180,15 @@ install() {
 
   info "Downloading checksums..."
   if ! curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS"; then
-    if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ]; then
-      warn "Failed to download checksums.txt — continuing because KPRUN_SKIP_CHECKSUM=1"
+    if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ] && [ "${KPRUN_DEV:-0}" = "1" ]; then
+      warn "Failed to download checksums.txt — continuing because developer skip is enabled"
     else
-      error "Failed to download checksums.txt — refusing to install unverified binary (set KPRUN_SKIP_CHECKSUM=1 to bypass at your own risk)"
+      error "Failed to download checksums.txt — refusing to install unverified binary (set KPRUN_DEV=1 and KPRUN_SKIP_CHECKSUM=1 to bypass at your own risk)"
     fi
   else
+    MINISIG_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt.minisig"
+    MINISIG="${TEMP_DIR}/checksums.txt.minisig"
+    curl -fsSL "$MINISIG_URL" -o "$MINISIG" 2>/dev/null || true
     verify_checksum "$ASSET_NAME" "$ARCHIVE" "$CHECKSUMS"
   fi
 

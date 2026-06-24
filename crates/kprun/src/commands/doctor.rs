@@ -30,12 +30,18 @@ fn print_diagnostics() -> Result<()> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
 
     if cfg.db_path.exists() {
         println!("vault: ok ({})", cfg.db_path.display());
     } else {
-        println!("vault: missing ({})", cfg.db_path.display());
+        let name = cfg
+            .db_path
+            .file_name()
+            .map(|f| f.to_string_lossy())
+            .unwrap_or_else(|| cfg.db_path.to_string_lossy());
+        println!("vault: missing ({name})");
         return Err(kprun_core::KprunError::Other(
             "vault database not found".into(),
         ));
@@ -46,7 +52,7 @@ fn print_diagnostics() -> Result<()> {
     let _vault = open_vault(&cfg.db_path, db_key, OpenMode::ReadOnly)?;
     println!("unlock: ok");
 
-    let keystore = if keystore_has_master() {
+    let keystore = if keystore_has_master(&cfg.db_path) {
         "present"
     } else {
         "absent"
@@ -65,6 +71,11 @@ fn print_diagnostics() -> Result<()> {
 }
 
 fn print_mcp_fragment(entry: &str) -> Result<()> {
+    if entry == "github" {
+        eprintln!(
+            "NOTE: npx auto-install without a lockfile is a supply-chain risk; pin the MCP server version in production."
+        );
+    }
     let command = mcp_command()?;
     let args = mcp_args(entry);
     let fragment = json!({
@@ -94,7 +105,7 @@ fn mcp_args(entry: &str) -> Vec<String> {
             "--".into(),
             "npx".into(),
             "-y".into(),
-            "@modelcontextprotocol/server-github".into(),
+            "@modelcontextprotocol/server-github@2025.4.8".into(),
         ],
         other => vec!["run".into(), other.to_string(), "--".into()],
     }

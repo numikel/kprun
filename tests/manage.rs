@@ -6,7 +6,10 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use predicates::prelude::PredicateBooleanExt;
 
 fn setup_openai_vault(db: &Path) {
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -72,10 +75,33 @@ fn get_reveal_audits_access() {
 }
 
 #[test]
+fn get_keys_audits_access() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_openai_vault(&db);
+
+    kprun()
+        .env("KPRUN_DB", db.to_str().unwrap())
+        .env("KPRUN_LOG", log.to_str().unwrap())
+        .env("KPRUN_TEST_MASTER", "pass")
+        .args(["get", "openai", "--keys"])
+        .assert()
+        .success();
+
+    let log_content = std::fs::read_to_string(&log).unwrap();
+    assert!(log_content.contains("openai"));
+    assert!(log_content.contains("OPENAI_API_KEY"));
+}
+
+#[test]
 fn set_unset_delete_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&db, key, "kprun").unwrap();
 
