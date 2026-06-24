@@ -81,7 +81,7 @@ fn doctor_mcp_github_prints_json_fragment() {
         "--",
         "npx",
         "-y",
-        "@modelcontextprotocol/server-github",
+        "@modelcontextprotocol/server-github@2025.4.8",
     ];
     assert_eq!(args.len(), expected_args.len());
     for (i, expected) in expected_args.iter().enumerate() {

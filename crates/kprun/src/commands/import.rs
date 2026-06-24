@@ -226,3 +226,16 @@ fn unescape_dotenv_value(s: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_dotenv_import;
+
+    #[test]
+    fn imports_quoted_value_with_escaped_newline() {
+        let content = "# svc\nMULTI=\"line1\\nline2\"\n";
+        let entries = parse_dotenv_import(content).unwrap();
+        assert_eq!(entries[0].pairs[0].0, "MULTI");
+        assert_eq!(entries[0].pairs[0].1, "line1\nline2");
+    }
+}

@@ -26,3 +26,36 @@ We aim to acknowledge reports within **7 days** and will coordinate disclosure a
 ## Security model
 
 kprun injects secrets into **child process environments**. Treat vault files (`.kdbx`), keyfiles, and audit logs as sensitive. Do not commit them to version control.
+
+### File permissions
+
+Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, inheritance is removed and access is limited to the current user).
+
+### Keychain storage
+
+When you run `kprun init` without `--no-store`, the KeePass master password is stored in the OS keychain (Credential Manager on Windows, Keychain on macOS, Secret Service on Linux). The entry is keyed per vault path (`kprun` / `master:<sha256(db_path)>`), not shared across vaults. The password is stored as plaintext in the keychain — anyone with access to your unlocked OS session can read it. Use `kprun deinit` to remove the stored password for the current vault.
+
+### Process environment exposure
+
+Injected secrets are visible to the child process and, on many systems, to other users with sufficient privileges via `/proc/<pid>/environ`, Process Explorer, or `ps e`. Use `kprun run --clean-env` to drop the parent environment and pass only injected secrets plus a minimal safe baseline.
+
+### Verifying releases
+
+Release `checksums.txt` is signed with minisign. Verify with:
+
+```sh
+minisign -Vm checksums.txt -P RWQ...   # kprun public key (see below)
+sha256sum -c checksums.txt
+```
+
+kprun minisign public key (replace `RWQ...` after the release key ceremony):
+
+```
+RWQ...
+```
+
+Install scripts verify the minisign signature when `minisign` is available and a real public key is configured.
+
+### test-hooks scope
+
+`KPRUN_TEST_MASTER` is honored only in builds compiled with `--features test-hooks`. GitHub Release binaries do not include this feature; the variable has no effect on release installs.
