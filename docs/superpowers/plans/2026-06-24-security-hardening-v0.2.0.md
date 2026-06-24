@@ -735,12 +735,12 @@ git commit -m "refactor(cli): derive caller key from master instead of cloning D
 - Removed a redundant clone of database key material in command dispatch. (M-6)
 ```
 
-- [ ] **Step 2: Verify.**
+- [x] **Step 2: Verify.**
 
 Run: `cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
 Expected: clean.
 
-- [ ] **Step 3: Commit, push, PR.**
+- [x] **Step 3: Commit, push, PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
