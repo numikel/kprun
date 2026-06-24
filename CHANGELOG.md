@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-24
+
+See [docs/changelogs/v0.2.1.md](docs/changelogs/v0.2.1.md) for details.
+
+### Added
+
+- CLI polish: ASCII banner, subcommand help text, success confirmations, guided `init`, empty `list` hint; minisign public key in installers.
+
+### Changed
+
+- Interactive stderr UX for vault management; banner suppressed for `run` and machine-readable modes.
+
 ## [0.2.0] - 2026-06-24
 
 See [docs/changelogs/v0.2.0.md](docs/changelogs/v0.2.0.md) for details.

@@ -51,19 +51,11 @@ pub enum Commands {
         reveal: bool,
     },
     /// Set or update secret fields on a vault entry
-    Set {
-        entry: String,
-        pairs: Vec<String>,
-    },
+    Set { entry: String, pairs: Vec<String> },
     /// Remove secret fields from a vault entry
-    Unset {
-        entry: String,
-        keys: Vec<String>,
-    },
+    Unset { entry: String, keys: Vec<String> },
     /// Delete a vault entry
-    Delete {
-        entry: String,
-    },
+    Delete { entry: String },
     /// Export vault entries to JSON or dotenv
     Export {
         #[arg(long, value_enum, default_value_t = ExportFormat::Json)]

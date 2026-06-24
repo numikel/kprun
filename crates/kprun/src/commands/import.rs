@@ -82,7 +82,11 @@ fn run(file: &str, merge: bool) -> Result<()> {
     vault.save_with_key(db_key)?;
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
-    let mode = if merge { "merged into" } else { "imported into" };
+    let mode = if merge {
+        "merged into"
+    } else {
+        "imported into"
+    };
     ui::success(&format!("{count} {noun} {mode} vault"));
     Ok(())
 }
