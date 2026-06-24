@@ -50,7 +50,10 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool) -> Result<()> {
     } else {
         let path = default_export_path(format);
         kprun_core::secure_fs::write_restricted(&path, output.as_bytes())?;
-        eprintln!("wrote export to {} (permissions restricted to owner)", path.display());
+        eprintln!(
+            "wrote export to {} (permissions restricted to owner)",
+            path.display()
+        );
     }
 
     Ok(())

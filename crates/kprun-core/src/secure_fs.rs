@@ -72,7 +72,10 @@ fn create_restricted_inner(path: &Path) -> Result<File> {
 
 #[cfg(not(any(unix, windows)))]
 fn open_append_inner(path: &Path) -> Result<File> {
-    Ok(std::fs::OpenOptions::new().create(true).append(true).open(path)?)
+    Ok(std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?)
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -92,7 +95,10 @@ fn create_restricted_inner(path: &Path) -> Result<File> {
 
 #[cfg(windows)]
 fn open_append_inner(path: &Path) -> Result<File> {
-    Ok(std::fs::OpenOptions::new().create(true).append(true).open(path)?)
+    Ok(std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?)
 }
 
 /// Enforce owner-only access on Windows by removing inheritance and granting

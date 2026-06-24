@@ -79,7 +79,12 @@ mod tests {
         let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
         log_access(
             &cfg,
-            &AuditRecord::new(PathBuf::from("/db.kdbx"), vec!["x".into()], vec!["K".into()], None),
+            &AuditRecord::new(
+                PathBuf::from("/db.kdbx"),
+                vec!["x".into()],
+                vec!["K".into()],
+                None,
+            ),
         )
         .unwrap();
         let mode = std::fs::metadata(&log).unwrap().permissions().mode();
