@@ -3,6 +3,7 @@
 **/*.keyfile
 .DS_Store
 docs/*
+!docs/kprun.gif
 !docs/changelogs/
 !docs/changelogs/**
 !docs/github-setup.md
@@ -14,5 +15,6 @@ docs/*
 kprun-release.key
 kprun-release.pub
 target-alt/
+target-*/
 .env
 .env.*
