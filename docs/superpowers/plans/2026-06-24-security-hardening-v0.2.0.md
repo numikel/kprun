@@ -992,7 +992,7 @@ git commit -m "ci(install): verify minisign signature and gate checksum skip beh
 - `KPRUN_SKIP_CHECKSUM` now requires `KPRUN_DEV=1` (developer-only). (M-5)
 ```
 
-- [ ] **Step 2: Push + PR.**
+- [x] **Step 2: Push + PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
