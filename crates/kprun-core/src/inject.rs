@@ -14,6 +14,34 @@ fn collision_warning_message(key: &str, entry: &str) -> String {
     format!("warning: key '{key}' from entry '{entry}' overrides an earlier value")
 }
 
+/// Environment variable names that can subvert process execution or library loading.
+/// Injecting these from a vault is refused (skipped with a warning).
+const DANGEROUS_ENV: &[&str] = &[
+    "PATH",
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "BASH_ENV",
+    "ENV",
+    "IFS",
+];
+
+fn is_dangerous_env(key: &str) -> bool {
+    DANGEROUS_ENV.iter().any(|d| d.eq_ignore_ascii_case(key))
+}
+
+fn dangerous_skip_message(key: &str, entry: &str) -> String {
+    format!("warning: refusing to inject dangerous variable '{key}' from entry '{entry}'")
+}
+
 pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<InjectResult> {
     let mut env = HashMap::new();
     let mut injected_keys = Vec::new();
@@ -21,6 +49,10 @@ pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<Inject
     for name in entry_names {
         let id = vault.find_entry_by_title(name)?;
         for (k, v) in vault.entry_custom_values(id) {
+            if is_dangerous_env(&k) {
+                eprintln!("{}", dangerous_skip_message(&k, name));
+                continue;
+            }
             if env.insert(k.clone(), v).is_some() {
                 eprintln!("{}", collision_warning_message(&k, name));
             }
@@ -84,6 +116,29 @@ mod tests {
             result.injected_keys,
             vec!["OPENAI_API_KEY".to_string(), "DATABASE_URL".to_string()]
         );
+    }
+
+    #[test]
+    fn skips_dangerous_env_names() {
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("danger.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "svc");
+            e.set_unprotected("PATH", "/evil/bin");
+            e.set_unprotected("SAFE_KEY", "ok");
+        });
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        let mut file = std::fs::File::create(&db_path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
+        let result = resolve_injection(&vault, &["svc".into()]).unwrap();
+        assert!(!result.env.contains_key("PATH"));
+        assert_eq!(result.env.get("SAFE_KEY").map(String::as_str), Some("ok"));
+        assert!(!result.injected_keys.iter().any(|k| k == "PATH"));
     }
 
     #[test]
