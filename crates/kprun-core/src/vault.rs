@@ -94,16 +94,20 @@ impl Vault {
 
     pub fn find_entry_by_title(&self, title: &str) -> Result<EntryId> {
         let title_lower = title.to_ascii_lowercase();
+        let mut found: Option<EntryId> = None;
         for entry in self.db.iter_all_entries() {
-            if entry
+            let matches = entry
                 .get_title()
                 .map(|t| t.to_ascii_lowercase() == title_lower)
-                .unwrap_or(false)
-            {
-                return Ok(entry.id());
+                .unwrap_or(false);
+            if matches {
+                if found.is_some() {
+                    return Err(KprunError::DuplicateEntry(title.to_string()));
+                }
+                found = Some(entry.id());
             }
         }
-        Err(KprunError::EntryNotFound(title.to_string()))
+        found.ok_or_else(|| KprunError::EntryNotFound(title.to_string()))
     }
 
     pub fn list_entries(&self) -> Vec<EntrySummary> {
@@ -374,6 +378,28 @@ mod tests {
         let id = vault2.find_entry_by_title("svc").unwrap();
         let vals = vault2.entry_custom_values(id);
         assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
+    }
+
+    #[test]
+    fn find_entry_by_title_rejects_duplicates() {
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("dup.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "dup");
+        });
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "DUP");
+        });
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let err = vault.find_entry_by_title("dup").unwrap_err();
+        assert!(matches!(err, KprunError::DuplicateEntry(_)));
     }
 
     #[cfg(unix)]
