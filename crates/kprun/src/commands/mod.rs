@@ -23,7 +23,11 @@ pub fn dispatch(command: Commands) {
             no_store,
             keyfile,
         } => std::process::exit(init::execute(db, no_store, keyfile)),
-        Commands::Run { entries, command } => std::process::exit(run::execute(entries, command)),
+        Commands::Run {
+            entries,
+            command,
+            clean_env,
+        } => std::process::exit(run::execute(entries, command, clean_env)),
         Commands::List { json } => std::process::exit(list::execute(json)),
         Commands::Get {
             entry,
