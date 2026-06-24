@@ -761,7 +761,7 @@ gh pr create --title "feat(core): protected fields + memory hygiene" --body "Imp
 **Files:**
 - Modify: `.github/workflows/ci.yml`, `.github/workflows/release.yml`
 
-- [ ] **Step 1: Resolve each action tag to its current commit SHA.** For every `uses:` in both workflows, look up the SHA for the pinned tag:
+- [x] **Step 1: Resolve each action tag to its current commit SHA.** For every `uses:` in both workflows, look up the SHA for the pinned tag:
 
 ```powershell
 gh api repos/actions/checkout/git/refs/tags/v7 --jq .object.sha
@@ -774,7 +774,7 @@ gh api repos/softprops/action-gh-release/git/refs/tags/v3 --jq .object.sha
 
 (If a tag is annotated, dereference: append `^{}` lookup via `gh api repos/<o>/<r>/git/tags/<sha> --jq .object.sha`.)
 
-- [ ] **Step 2: Replace every `uses: owner/action@vTAG` with `uses: owner/action@<sha> # vTAG`.** Example for `ci.yml`:
+- [x] **Step 2: Replace every `uses: owner/action@vTAG` with `uses: owner/action@<sha> # vTAG`.** Example for `ci.yml`:
 
 ```yaml
       - uses: actions/checkout@<sha-from-step-1> # v7
@@ -783,7 +783,7 @@ gh api repos/softprops/action-gh-release/git/refs/tags/v3 --jq .object.sha
 
 Apply the same to all `uses:` lines in both files.
 
-- [ ] **Step 3: Add a CI lint job that rejects unpinned actions.** In `ci.yml` add a job:
+- [x] **Step 3: Add a CI lint job that rejects unpinned actions.** In `ci.yml` add a job:
 
 ```yaml
   pin-check:
@@ -804,7 +804,7 @@ Apply the same to all `uses:` lines in both files.
           echo "All actions pinned to SHA"
 ```
 
-- [ ] **Step 4: Validate YAML locally.**
+- [x] **Step 4: Validate YAML locally.**
 
 Run: `gh workflow view ci.yml` is not offline; instead verify syntax by ensuring the grep lint passes locally:
 ```powershell
@@ -812,7 +812,7 @@ Select-String -Path .github/workflows/*.yml -Pattern 'uses:\s+[^@]+@v[0-9]'
 ```
 Expected: no matches.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add .github/workflows/ci.yml .github/workflows/release.yml
@@ -824,7 +824,7 @@ git commit -m "ci: pin all GitHub Actions to commit SHAs (H-3)"
 **Files:**
 - Modify: `.github/workflows/release.yml:8-9` and the `release` job
 
-- [ ] **Step 1: Remove the top-level `permissions` block** (lines 8-9) and set permissions per job. Set `validate` and `build` to read-only, `release` to write:
+- [x] **Step 1: Remove the top-level `permissions` block** (lines 8-9) and set permissions per job. Set `validate` and `build` to read-only, `release` to write:
 
 ```yaml
 permissions:
@@ -845,12 +845,12 @@ jobs:
     ...
 ```
 
-- [ ] **Step 2: Confirm the lint and grep.**
+- [x] **Step 2: Confirm the lint and grep.**
 
 Run: `Select-String -Path .github/workflows/release.yml -Pattern 'contents: write'`
 Expected: exactly one match (inside the `release` job).
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add .github/workflows/release.yml
@@ -862,7 +862,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
 **Files:**
 - Modify: `.github/workflows/release.yml` (release job)
 
-- [ ] **Step 1: Add minisign install + sign steps** after "Create checksums" and before "Upload Release Assets":
+- [x] **Step 1: Add minisign install + sign steps** after "Create checksums" and before "Upload Release Assets":
 
 ```yaml
       - name: Install minisign
@@ -887,7 +887,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
             -t "kprun ${VERSION} signed"
 ```
 
-- [ ] **Step 2: Derive `HAS_MINISIGN_KEY` at job level** so releases before the key ceremony still succeed (without a signature). Add to the `release` job, before steps:
+- [x] **Step 2: Derive `HAS_MINISIGN_KEY` at job level** so releases before the key ceremony still succeed (without a signature). Add to the `release` job, before steps:
 
 ```yaml
   release:
@@ -900,7 +900,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
       HAS_MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY != '' }}
 ```
 
-- [ ] **Step 3: Include the signature in uploaded assets.** Change the final step's `files:`:
+- [x] **Step 3: Include the signature in uploaded assets.** Change the final step's `files:`:
 
 ```yaml
       - name: Upload Release Assets
@@ -917,7 +917,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
 
 - [ ] **Step 4: Document the key ceremony in `SECURITY.md`** (full content added in Phase 7; here add a short pointer). Append to `release.yml` nothing else.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add .github/workflows/release.yml
@@ -929,11 +929,11 @@ git commit -m "ci: sign release checksums with minisign (H-4)"
 **Files:**
 - Modify: `scripts/install.sh:82-85`, `scripts/install.ps1:64-66`
 
-- [ ] **Step 1: Read both installer scripts fully** to locate the checksum verification block and the `KPRUN_SKIP_CHECKSUM` handling.
+- [x] **Step 1: Read both installer scripts fully** to locate the checksum verification block and the `KPRUN_SKIP_CHECKSUM` handling.
 
 Run: open `scripts/install.sh` and `scripts/install.ps1`.
 
-- [ ] **Step 2: Add optional minisign verification (sh).** After the existing SHA-256 check in `install.sh`, add (using the embedded public key):
+- [x] **Step 2: Add optional minisign verification (sh).** After the existing SHA-256 check in `install.sh`, add (using the embedded public key):
 
 ```sh
 # Optional minisign verification (defense in depth on top of SHA-256).
@@ -952,7 +952,7 @@ if command -v minisign >/dev/null 2>&1; then
 fi
 ```
 
-- [ ] **Step 3: Gate `KPRUN_SKIP_CHECKSUM` behind a developer flag (sh).** Replace the existing public bypass so it only works when `KPRUN_DEV=1` is also set:
+- [x] **Step 3: Gate `KPRUN_SKIP_CHECKSUM` behind a developer flag (sh).** Replace the existing public bypass so it only works when `KPRUN_DEV=1` is also set:
 
 ```sh
 if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ] && [ "${KPRUN_DEV:-0}" = "1" ]; then
@@ -962,9 +962,9 @@ else
 fi
 ```
 
-- [ ] **Step 4: Mirror both changes in `install.ps1`** (PowerShell equivalents): add minisign verification block guarded by `Get-Command minisign -ErrorAction SilentlyContinue`, and gate the skip with `$env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1'`.
+- [x] **Step 4: Mirror both changes in `install.ps1`** (PowerShell equivalents): add minisign verification block guarded by `Get-Command minisign -ErrorAction SilentlyContinue`, and gate the skip with `$env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1'`.
 
-- [ ] **Step 5: Validate script syntax** (mirrors CI `install-script-smoke`):
+- [x] **Step 5: Validate script syntax** (mirrors CI `install-script-smoke`):
 
 ```powershell
 bash -n scripts/install.sh
@@ -972,7 +972,7 @@ pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Langu
 ```
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```powershell
 git add scripts/install.sh scripts/install.ps1
@@ -981,7 +981,7 @@ git commit -m "ci(install): verify minisign signature and gate checksum skip beh
 
 ### Task 3.5: Changelog + PR
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Supply chain
@@ -992,7 +992,7 @@ git commit -m "ci(install): verify minisign signature and gate checksum skip beh
 - `KPRUN_SKIP_CHECKSUM` now requires `KPRUN_DEV=1` (developer-only). (M-5)
 ```
 
-- [ ] **Step 2: Push + PR.**
+- [x] **Step 2: Push + PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
