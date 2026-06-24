@@ -51,8 +51,10 @@ impl MasterPasswordSource for PromptUnlock {
 }
 
 /// Test helper — production code uses SystemUnlock then PromptUnlock fallback.
+#[cfg(feature = "test-hooks")]
 pub struct FixedUnlock(pub String);
 
+#[cfg(feature = "test-hooks")]
 impl MasterPasswordSource for FixedUnlock {
     fn get_master(&self) -> Result<Zeroizing<String>> {
         Ok(Zeroizing::new(self.0.clone()))
@@ -153,6 +155,7 @@ mod tests {
         let _key = build_database_key(&ctx, "testpass").unwrap();
     }
 
+    #[cfg(feature = "test-hooks")]
     #[test]
     fn fixed_unlock_returns_password() {
         let src = FixedUnlock("secret".into());
