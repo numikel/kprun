@@ -553,7 +553,7 @@ git add docs/changelogs/v0.2.0.md
 git commit -m "docs: add v0.2.0 changelog with H-1 file permission note"
 ```
 
-- [ ] **Step 4: Push and open PR 1.**
+- [x] **Step 4: Push and open PR 1.**
 
 ```powershell
 git push -u origin feat/secure-file-permissions
