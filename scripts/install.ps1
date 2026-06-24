@@ -61,8 +61,8 @@ function Test-ArchivePathsSafe([string[]]$EntryNames) {
 }
 
 function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$ChecksumsPath) {
-    if ($env:KPRUN_SKIP_CHECKSUM -eq '1') {
-        Write-Warn 'KPRUN_SKIP_CHECKSUM=1 set — SKIPPING checksum verification (NOT RECOMMENDED)'
+    if ($env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1') {
+        Write-Warn 'WARNING: checksum verification skipped (developer mode)'
         return
     }
 
@@ -79,6 +79,25 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
     }
 
     Write-Info 'Checksum verified.'
+
+  # Optional minisign verification (defense in depth on top of SHA-256).
+  $KprunMinisignPubkey = 'RWQ...'   # published kprun release public key (replace during key ceremony)
+  $minisigPath = "$ChecksumsPath.minisig"
+  if ($KprunMinisignPubkey -ne 'RWQ...' -and (Get-Command minisign -ErrorAction SilentlyContinue)) {
+    if (Test-Path $minisigPath) {
+      $pubFile = [System.IO.Path]::GetTempFileName()
+      try {
+        Set-Content -Path $pubFile -Value $KprunMinisignPubkey -NoNewline
+        & minisign -V -p $pubFile -m $ChecksumsPath
+        if ($LASTEXITCODE -ne 0) {
+          Write-Err 'minisign signature verification failed'
+        }
+        Write-Info 'minisign signature verified'
+      } finally {
+        Remove-Item -Path $pubFile -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
 }
 
 function Update-UserPath {
@@ -131,14 +150,21 @@ function Install-Kprun {
         try {
             Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsPath -UseBasicParsing
         } catch {
-            if ($env:KPRUN_SKIP_CHECKSUM -eq '1') {
-                Write-Warn 'Failed to download checksums.txt — continuing because KPRUN_SKIP_CHECKSUM=1'
+            if ($env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1') {
+                Write-Warn 'Failed to download checksums.txt — continuing because developer skip is enabled'
             } else {
-                Write-Err 'Failed to download checksums.txt — refusing to install unverified binary (set KPRUN_SKIP_CHECKSUM=1 to bypass at your own risk)'
+                Write-Err 'Failed to download checksums.txt — refusing to install unverified binary (set KPRUN_DEV=1 and KPRUN_SKIP_CHECKSUM=1 to bypass at your own risk)'
             }
         }
 
         if (Test-Path $checksumsPath) {
+            $minisigUrl = "https://github.com/$Repo/releases/download/$Version/checksums.txt.minisig"
+            $minisigPath = "$checksumsPath.minisig"
+            try {
+                Invoke-WebRequest -Uri $minisigUrl -OutFile $minisigPath -UseBasicParsing
+            } catch {
+                # Signature file is optional until signing is provisioned.
+            }
             Verify-Checksum -AssetName $assetName -ArchivePath $archivePath -ChecksumsPath $checksumsPath
         }
 
