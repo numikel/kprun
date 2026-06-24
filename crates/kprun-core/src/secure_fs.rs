@@ -80,6 +80,49 @@ pub fn harden_existing(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn create_restricted_inner(path: &Path) -> Result<File> {
+    // Create normally; permissions are tightened by harden_existing via icacls.
+    Ok(std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?)
+}
+
+#[cfg(windows)]
+fn open_append_inner(path: &Path) -> Result<File> {
+    Ok(std::fs::OpenOptions::new().create(true).append(true).open(path)?)
+}
+
+/// Enforce owner-only access on Windows by removing inheritance and granting
+/// full control only to the current user (`icacls <path> /inheritance:r /grant:r "<user>:F"`).
+#[cfg(windows)]
+pub fn harden_existing(path: &Path) -> Result<()> {
+    use std::process::Command;
+
+    let user = std::env::var("USERNAME")
+        .map_err(|_| KprunError::Other("secure_fs: USERNAME not set".into()))?;
+    let grant = format!("{user}:F");
+
+    let output = Command::new("icacls")
+        .arg(path)
+        .arg("/inheritance:r")
+        .arg("/grant:r")
+        .arg(&grant)
+        .output()
+        .map_err(|e| KprunError::Other(format!("secure_fs: failed to run icacls: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(KprunError::Other(format!(
+            "secure_fs: icacls failed to restrict permissions: {}",
+            stderr.trim()
+        )));
+    }
+    Ok(())
+}
+
 #[allow(dead_code)]
 fn unsupported(op: &str) -> KprunError {
     KprunError::Other(format!("secure_fs: cannot enforce permissions for {op}"))
@@ -119,5 +162,29 @@ mod unix_tests {
         writeln!(f, "line").unwrap();
         let mode = std::fs::metadata(&p).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::process::Command;
+    use tempfile::tempdir;
+
+    fn icacls_dump(path: &std::path::Path) -> String {
+        let out = Command::new("icacls").arg(path).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    #[test]
+    fn create_restricted_removes_inheritance() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("secret");
+        let _f = create_restricted(&p).unwrap();
+        let acl = icacls_dump(&p);
+        // After /inheritance:r only explicit (current-user) entries remain;
+        // built-in BUILTIN\Users group should not be present.
+        assert!(!acl.contains("BUILTIN\\Users"));
+        assert!(!acl.contains("Everyone"));
     }
 }
