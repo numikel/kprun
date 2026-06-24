@@ -10,6 +10,8 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use kprun_core::{KprunError, Result};
 use zeroize::Zeroizing;
 
+const MIN_MASTER_LEN: usize = 12;
+
 pub fn execute(db: Option<String>, no_store: bool, keyfile: Option<String>) -> i32 {
     match run(db, no_store, keyfile) {
         Ok(()) => 0,
@@ -75,6 +77,16 @@ fn create_new(cfg: &Config, db_path: &Path, ctx: &UnlockContext, no_store: bool)
     Ok(())
 }
 
+fn validate_new_master(pw1: &str, pw2: &str) -> Result<()> {
+    if pw1 != pw2 {
+        return Err(KprunError::Other("passwords do not match".into()));
+    }
+    if pw1.chars().count() < MIN_MASTER_LEN {
+        return Err(KprunError::WeakPassword(MIN_MASTER_LEN));
+    }
+    Ok(())
+}
+
 fn prompt_new_master() -> Result<Zeroizing<String>> {
     #[cfg(feature = "test-hooks")]
     if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
@@ -83,13 +95,7 @@ fn prompt_new_master() -> Result<Zeroizing<String>> {
 
     let pw1 = read_password_prompt("Choose KeePass master password: ")?;
     let pw2 = read_password_prompt("Confirm master password: ")?;
-
-    if pw1 != pw2 {
-        return Err(KprunError::Other("passwords do not match".into()));
-    }
-    if pw1.is_empty() {
-        return Err(KprunError::UnlockFailed);
-    }
+    validate_new_master(&pw1, &pw2)?;
     Ok(pw1)
 }
 
@@ -106,6 +112,9 @@ fn read_password_prompt(prompt: &str) -> Result<Zeroizing<String>> {
     }
 
     eprint!("{prompt}");
+    eprintln!(
+        "\nWARNING: reading password from a non-terminal (pipe); the value may be visible in shell history or process listings"
+    );
     let mut line = String::new();
     io::stdin()
         .lock()
@@ -114,4 +123,27 @@ fn read_password_prompt(prompt: &str) -> Result<Zeroizing<String>> {
     Ok(Zeroizing::new(
         line.trim_end_matches(['\r', '\n']).to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_short_password() {
+        assert!(matches!(
+            validate_new_master("short", "short"),
+            Err(KprunError::WeakPassword(12))
+        ));
+    }
+
+    #[test]
+    fn accepts_long_matching_password() {
+        assert!(validate_new_master("a-strong-passphrase", "a-strong-passphrase").is_ok());
+    }
+
+    #[test]
+    fn rejects_mismatch() {
+        assert!(validate_new_master("a-strong-passphrase", "different-passphrase").is_err());
+    }
 }
