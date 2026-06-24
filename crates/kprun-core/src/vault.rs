@@ -94,16 +94,20 @@ impl Vault {
 
     pub fn find_entry_by_title(&self, title: &str) -> Result<EntryId> {
         let title_lower = title.to_ascii_lowercase();
+        let mut found: Option<EntryId> = None;
         for entry in self.db.iter_all_entries() {
-            if entry
+            let matches = entry
                 .get_title()
                 .map(|t| t.to_ascii_lowercase() == title_lower)
-                .unwrap_or(false)
-            {
-                return Ok(entry.id());
+                .unwrap_or(false);
+            if matches {
+                if found.is_some() {
+                    return Err(KprunError::DuplicateEntry(title.to_string()));
+                }
+                found = Some(entry.id());
             }
         }
-        Err(KprunError::EntryNotFound(title.to_string()))
+        found.ok_or_else(|| KprunError::EntryNotFound(title.to_string()))
     }
 
     pub fn list_entries(&self) -> Vec<EntrySummary> {
@@ -139,7 +143,7 @@ impl Vault {
             Ok(id) => {
                 if let Some(mut entry) = self.db.entry_mut(id) {
                     for (k, v) in pairs {
-                        entry.set_unprotected(k.clone(), v.clone());
+                        entry.set_protected(k.clone(), v.clone());
                     }
                 }
                 Ok(())
@@ -148,7 +152,7 @@ impl Vault {
                 self.db.root_mut().add_entry().edit(|e| {
                     e.set_unprotected(fields::TITLE, title_owned);
                     for (k, v) in pairs {
-                        e.set_unprotected(k.clone(), v.clone());
+                        e.set_protected(k.clone(), v.clone());
                     }
                 });
                 Ok(())
@@ -244,7 +248,10 @@ mod tests {
             e.set_unprotected(fields::TITLE, "github");
             e.set_unprotected("GITHUB_TOKEN", "ghp_test");
         });
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, password)?;
         let mut file = std::fs::File::create(path)?;
         db.save(&mut file, key)
@@ -256,7 +263,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
         create_test_vault(&db_path, "pass").unwrap();
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let id = vault.find_entry_by_title("GitHub").unwrap();
@@ -268,7 +278,10 @@ mod tests {
     fn set_attributes_persists_after_reopen() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("w.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -288,10 +301,37 @@ mod tests {
     }
 
     #[test]
+    fn set_attributes_stores_protected_values() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("prot.kdbx");
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes("svc", &[("SECRET".into(), "sk-protected".into())])
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        // Reopen and confirm the value round-trips via the unprotecting getter.
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        assert_eq!(vals.get("SECRET").map(String::as_str), Some("sk-protected"));
+    }
+
+    #[test]
     fn read_only_vault_rejects_write_operations() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("ro.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -309,7 +349,10 @@ mod tests {
     fn custom_field_names_are_sorted_alphabetically() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("sort.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -339,7 +382,10 @@ mod tests {
     fn save_with_key_persists_without_second_unlock() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("key.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
@@ -355,13 +401,41 @@ mod tests {
         assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
     }
 
+    #[test]
+    fn find_entry_by_title_rejects_duplicates() {
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("dup.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "dup");
+        });
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "DUP");
+        });
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let err = vault.find_entry_by_title("dup").unwrap_err();
+        assert!(matches!(err, KprunError::DuplicateEntry(_)));
+    }
+
     #[cfg(unix)]
     #[test]
     fn create_vault_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
         let path = dir.path().join("perm.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key, "kprun").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();

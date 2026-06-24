@@ -5,6 +5,7 @@ use kprun_core::Result;
 
 use crate::cli::Commands;
 
+mod deinit;
 mod delete;
 mod doctor;
 mod export;
@@ -23,7 +24,11 @@ pub fn dispatch(command: Commands) {
             no_store,
             keyfile,
         } => std::process::exit(init::execute(db, no_store, keyfile)),
-        Commands::Run { entries, command } => std::process::exit(run::execute(entries, command)),
+        Commands::Run {
+            entries,
+            command,
+            clean_env,
+        } => std::process::exit(run::execute(entries, command, clean_env)),
         Commands::List { json } => std::process::exit(list::execute(json)),
         Commands::Get {
             entry,
@@ -37,9 +42,11 @@ pub fn dispatch(command: Commands) {
             format,
             stdout,
             reveal,
-        } => std::process::exit(export::execute(format, stdout, reveal)),
+            output,
+        } => std::process::exit(export::execute(format, stdout, reveal, output)),
         Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
         Commands::Doctor { mcp } => std::process::exit(doctor::execute(mcp)),
+        Commands::Deinit => std::process::exit(deinit::execute()),
     }
 }
 
@@ -47,9 +54,11 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
     let master = unlock_with_fallback(&ctx)?;
     let db_key = build_database_key(&ctx, &master)?;
-    let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
-    Ok((cfg, ctx, vault, db_key))
+    let caller_key = build_database_key(&ctx, &master)?;
+    let vault = open_vault(&cfg.db_path, db_key, mode)?;
+    Ok((cfg, ctx, vault, caller_key))
 }

@@ -6,7 +6,10 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use serde_json::Value;
 
 fn setup_vault(db: &Path) {
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -78,7 +81,7 @@ fn doctor_mcp_github_prints_json_fragment() {
         "--",
         "npx",
         "-y",
-        "@modelcontextprotocol/server-github",
+        "@modelcontextprotocol/server-github@2025.4.8",
     ];
     assert_eq!(args.len(), expected_args.len());
     for (i, expected) in expected_args.iter().enumerate() {

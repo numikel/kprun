@@ -13,10 +13,14 @@ pub enum KprunError {
     UnlockFailed,
     #[error("database is locked; close KeePassXC or retry")]
     DatabaseLocked,
-    #[error("invalid KEY=val: {0}")]
-    InvalidKeyVal(String),
-    #[error("empty key in KEY=val: {0}")]
-    EmptyKey(String),
+    #[error("invalid KEY=VALUE pair: missing '='")]
+    InvalidKeyVal,
+    #[error("invalid KEY=VALUE pair: empty key")]
+    EmptyKey,
+    #[error("multiple entries share the title '{0}'; titles must be unique")]
+    DuplicateEntry(String),
+    #[error("master password too short: minimum {0} characters required")]
+    WeakPassword(usize),
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]

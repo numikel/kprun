@@ -9,7 +9,7 @@ fn init_creates_database() {
         .env("KPRUN_DB", db.to_str().unwrap())
         .args(["init", "--no-store", "--db"])
         .arg(&db)
-        .write_stdin("testpass\ntestpass\n")
+        .write_stdin("test-passphrase\ntest-passphrase\n")
         .assert()
         .success();
     assert!(db.exists());

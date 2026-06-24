@@ -572,7 +572,7 @@ gh pr create --title "feat(core): secure file permissions" --body "Implements H-
 **Files:**
 - Modify: `crates/kprun-core/src/vault.rs:134-158` (set_attributes)
 
-- [ ] **Step 1: Write the failing round-trip test.** In `vault.rs` tests:
+- [x] **Step 1: Write the failing round-trip test.** In `vault.rs` tests:
 
 ```rust
     #[test]
@@ -597,12 +597,12 @@ gh pr create --title "feat(core): secure file permissions" --body "Implements H-
     }
 ```
 
-- [ ] **Step 2: Run it to confirm it passes already (baseline) or fails.**
+- [x] **Step 2: Run it to confirm it passes already (baseline) or fails.**
 
 Run: `cargo test -p kprun-core set_attributes_stores_protected_values`
 Expected: PASS even before the change (because `entry.get()` unprotects automatically). This test guards the round-trip; the protected flag itself is the behavior change.
 
-- [ ] **Step 3: Change `set_unprotected` → `set_protected` in both branches of `set_attributes`:**
+- [x] **Step 3: Change `set_unprotected` → `set_protected` in both branches of `set_attributes`:**
 
 ```rust
     pub fn set_attributes(&mut self, title: &str, pairs: &[(String, String)]) -> Result<()> {
@@ -634,14 +634,14 @@ Expected: PASS even before the change (because `entry.get()` unprotects automati
 
 Note: `TITLE` stays `set_unprotected` (it is metadata, not a secret, and is read for listing). Only custom values become protected.
 
-- [ ] **Step 4: Run tests to confirm round-trip still passes.**
+- [x] **Step 4: Run tests to confirm round-trip still passes.**
 
 Run: `cargo test -p kprun-core vault`
 Expected: all pass, including the new test and existing `set_attributes_persists_after_reopen`.
 
 If `set_protected` is not available on the `edit` closure's parameter type, fall back to: build the entry, then look it up and apply `set_protected` via `entry_mut` after `add_entry`. (Confirmed `set_protected` exists on `keepass::db::Entry` 0.13.10.)
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add crates/kprun-core/src/vault.rs
@@ -653,9 +653,9 @@ git commit -m "feat(core): store custom field values as protected (H-2)"
 **Files:**
 - Modify: `crates/kprun/src/commands/mod.rs:46-55`
 
-- [ ] **Step 1: Inspect callers.** `unlock_vault` returns `(Config, UnlockContext, Vault, DatabaseKey)` and clones `db_key` into `open_vault`. `open_vault` consumes the key. Callers that only read (`get`, `list`, `export`, `run`) ignore the returned `db_key` (bind it `_db_key`). Only write commands (`set`, `unset`, `delete`, `import`) need a key to save — and those already re-unlock or use `save_with_key`.
+- [x] **Step 1: Inspect callers.** `unlock_vault` returns `(Config, UnlockContext, Vault, DatabaseKey)` and clones `db_key` into `open_vault`. `open_vault` consumes the key. Callers that only read (`get`, `list`, `export`, `run`) ignore the returned `db_key` (bind it `_db_key`). Only write commands (`set`, `unset`, `delete`, `import`) need a key to save — and those already re-unlock or use `save_with_key`.
 
-- [ ] **Step 2: Split into read-only vs read-write helpers** to avoid keeping a second key copy for readers:
+- [x] **Step 2: Split into read-only vs read-write helpers** to avoid keeping a second key copy for readers:
 
 ```rust
 fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, DatabaseKey)> {
@@ -714,12 +714,12 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
 
 Use the simpler alternative: it removes `db_key.clone()` (which duplicated already-derived key material via `Clone`) and instead derives the second key directly from the still-alive `Zeroizing<String> master`, which is zeroized on drop. This avoids relying on `DatabaseKey: Clone` for secret material.
 
-- [ ] **Step 3: Run all CLI tests.**
+- [x] **Step 3: Run all CLI tests.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/mod.rs
@@ -728,19 +728,19 @@ git commit -m "refactor(cli): derive caller key from master instead of cloning D
 
 ### Task 2.3: Changelog + verification + PR
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`** under `## Security`:
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`** under `## Security`:
 
 ```markdown
 - Custom secret fields are now stored as KeePass protected (in-memory encrypted) values instead of plaintext. (H-2)
 - Removed a redundant clone of database key material in command dispatch. (M-6)
 ```
 
-- [ ] **Step 2: Verify.**
+- [x] **Step 2: Verify.**
 
 Run: `cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
 Expected: clean.
 
-- [ ] **Step 3: Commit, push, PR.**
+- [x] **Step 3: Commit, push, PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
@@ -761,7 +761,7 @@ gh pr create --title "feat(core): protected fields + memory hygiene" --body "Imp
 **Files:**
 - Modify: `.github/workflows/ci.yml`, `.github/workflows/release.yml`
 
-- [ ] **Step 1: Resolve each action tag to its current commit SHA.** For every `uses:` in both workflows, look up the SHA for the pinned tag:
+- [x] **Step 1: Resolve each action tag to its current commit SHA.** For every `uses:` in both workflows, look up the SHA for the pinned tag:
 
 ```powershell
 gh api repos/actions/checkout/git/refs/tags/v7 --jq .object.sha
@@ -774,7 +774,7 @@ gh api repos/softprops/action-gh-release/git/refs/tags/v3 --jq .object.sha
 
 (If a tag is annotated, dereference: append `^{}` lookup via `gh api repos/<o>/<r>/git/tags/<sha> --jq .object.sha`.)
 
-- [ ] **Step 2: Replace every `uses: owner/action@vTAG` with `uses: owner/action@<sha> # vTAG`.** Example for `ci.yml`:
+- [x] **Step 2: Replace every `uses: owner/action@vTAG` with `uses: owner/action@<sha> # vTAG`.** Example for `ci.yml`:
 
 ```yaml
       - uses: actions/checkout@<sha-from-step-1> # v7
@@ -783,7 +783,7 @@ gh api repos/softprops/action-gh-release/git/refs/tags/v3 --jq .object.sha
 
 Apply the same to all `uses:` lines in both files.
 
-- [ ] **Step 3: Add a CI lint job that rejects unpinned actions.** In `ci.yml` add a job:
+- [x] **Step 3: Add a CI lint job that rejects unpinned actions.** In `ci.yml` add a job:
 
 ```yaml
   pin-check:
@@ -804,7 +804,7 @@ Apply the same to all `uses:` lines in both files.
           echo "All actions pinned to SHA"
 ```
 
-- [ ] **Step 4: Validate YAML locally.**
+- [x] **Step 4: Validate YAML locally.**
 
 Run: `gh workflow view ci.yml` is not offline; instead verify syntax by ensuring the grep lint passes locally:
 ```powershell
@@ -812,7 +812,7 @@ Select-String -Path .github/workflows/*.yml -Pattern 'uses:\s+[^@]+@v[0-9]'
 ```
 Expected: no matches.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add .github/workflows/ci.yml .github/workflows/release.yml
@@ -824,7 +824,7 @@ git commit -m "ci: pin all GitHub Actions to commit SHAs (H-3)"
 **Files:**
 - Modify: `.github/workflows/release.yml:8-9` and the `release` job
 
-- [ ] **Step 1: Remove the top-level `permissions` block** (lines 8-9) and set permissions per job. Set `validate` and `build` to read-only, `release` to write:
+- [x] **Step 1: Remove the top-level `permissions` block** (lines 8-9) and set permissions per job. Set `validate` and `build` to read-only, `release` to write:
 
 ```yaml
 permissions:
@@ -845,12 +845,12 @@ jobs:
     ...
 ```
 
-- [ ] **Step 2: Confirm the lint and grep.**
+- [x] **Step 2: Confirm the lint and grep.**
 
 Run: `Select-String -Path .github/workflows/release.yml -Pattern 'contents: write'`
 Expected: exactly one match (inside the `release` job).
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add .github/workflows/release.yml
@@ -862,7 +862,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
 **Files:**
 - Modify: `.github/workflows/release.yml` (release job)
 
-- [ ] **Step 1: Add minisign install + sign steps** after "Create checksums" and before "Upload Release Assets":
+- [x] **Step 1: Add minisign install + sign steps** after "Create checksums" and before "Upload Release Assets":
 
 ```yaml
       - name: Install minisign
@@ -887,7 +887,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
             -t "kprun ${VERSION} signed"
 ```
 
-- [ ] **Step 2: Derive `HAS_MINISIGN_KEY` at job level** so releases before the key ceremony still succeed (without a signature). Add to the `release` job, before steps:
+- [x] **Step 2: Derive `HAS_MINISIGN_KEY` at job level** so releases before the key ceremony still succeed (without a signature). Add to the `release` job, before steps:
 
 ```yaml
   release:
@@ -900,7 +900,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
       HAS_MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY != '' }}
 ```
 
-- [ ] **Step 3: Include the signature in uploaded assets.** Change the final step's `files:`:
+- [x] **Step 3: Include the signature in uploaded assets.** Change the final step's `files:`:
 
 ```yaml
       - name: Upload Release Assets
@@ -917,7 +917,7 @@ git commit -m "ci: scope contents:write to release job only (M-4)"
 
 - [ ] **Step 4: Document the key ceremony in `SECURITY.md`** (full content added in Phase 7; here add a short pointer). Append to `release.yml` nothing else.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add .github/workflows/release.yml
@@ -929,11 +929,11 @@ git commit -m "ci: sign release checksums with minisign (H-4)"
 **Files:**
 - Modify: `scripts/install.sh:82-85`, `scripts/install.ps1:64-66`
 
-- [ ] **Step 1: Read both installer scripts fully** to locate the checksum verification block and the `KPRUN_SKIP_CHECKSUM` handling.
+- [x] **Step 1: Read both installer scripts fully** to locate the checksum verification block and the `KPRUN_SKIP_CHECKSUM` handling.
 
 Run: open `scripts/install.sh` and `scripts/install.ps1`.
 
-- [ ] **Step 2: Add optional minisign verification (sh).** After the existing SHA-256 check in `install.sh`, add (using the embedded public key):
+- [x] **Step 2: Add optional minisign verification (sh).** After the existing SHA-256 check in `install.sh`, add (using the embedded public key):
 
 ```sh
 # Optional minisign verification (defense in depth on top of SHA-256).
@@ -952,7 +952,7 @@ if command -v minisign >/dev/null 2>&1; then
 fi
 ```
 
-- [ ] **Step 3: Gate `KPRUN_SKIP_CHECKSUM` behind a developer flag (sh).** Replace the existing public bypass so it only works when `KPRUN_DEV=1` is also set:
+- [x] **Step 3: Gate `KPRUN_SKIP_CHECKSUM` behind a developer flag (sh).** Replace the existing public bypass so it only works when `KPRUN_DEV=1` is also set:
 
 ```sh
 if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ] && [ "${KPRUN_DEV:-0}" = "1" ]; then
@@ -962,9 +962,9 @@ else
 fi
 ```
 
-- [ ] **Step 4: Mirror both changes in `install.ps1`** (PowerShell equivalents): add minisign verification block guarded by `Get-Command minisign -ErrorAction SilentlyContinue`, and gate the skip with `$env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1'`.
+- [x] **Step 4: Mirror both changes in `install.ps1`** (PowerShell equivalents): add minisign verification block guarded by `Get-Command minisign -ErrorAction SilentlyContinue`, and gate the skip with `$env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1'`.
 
-- [ ] **Step 5: Validate script syntax** (mirrors CI `install-script-smoke`):
+- [x] **Step 5: Validate script syntax** (mirrors CI `install-script-smoke`):
 
 ```powershell
 bash -n scripts/install.sh
@@ -972,7 +972,7 @@ pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Langu
 ```
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```powershell
 git add scripts/install.sh scripts/install.ps1
@@ -981,7 +981,7 @@ git commit -m "ci(install): verify minisign signature and gate checksum skip beh
 
 ### Task 3.5: Changelog + PR
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Supply chain
@@ -992,7 +992,7 @@ git commit -m "ci(install): verify minisign signature and gate checksum skip beh
 - `KPRUN_SKIP_CHECKSUM` now requires `KPRUN_DEV=1` (developer-only). (M-5)
 ```
 
-- [ ] **Step 2: Push + PR.**
+- [x] **Step 2: Push + PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md
@@ -1661,7 +1661,7 @@ gh pr create --title "feat(core): env injection safety" --body "Implements env b
 **Files:**
 - Modify: `crates/kprun-core/Cargo.toml` and workspace `Cargo.toml` (add `sha2`), `crates/kprun-core/src/unlock.rs`
 
-- [ ] **Step 1: Add `sha2` dependency.** Check latest version:
+- [x] **Step 1: Add `sha2` dependency.** Check latest version:
 
 ```powershell
 (Invoke-RestMethod https://crates.io/api/v1/crates/sha2).crate.max_stable_version
@@ -1669,7 +1669,7 @@ gh pr create --title "feat(core): env injection safety" --body "Implements env b
 
 Add to workspace `Cargo.toml` `[workspace.dependencies]`: `sha2 = "<latest>"`. Add to `crates/kprun-core/Cargo.toml` `[dependencies]`: `sha2 = { workspace = true }`.
 
-- [ ] **Step 2: Replace constant USER with a per-vault account derived from db path.** In `unlock.rs`:
+- [x] **Step 2: Replace constant USER with a per-vault account derived from db path.** In `unlock.rs`:
 
 ```rust
 const SERVICE: &str = "kprun";
@@ -1687,7 +1687,7 @@ fn keychain_account(db_path: &Path) -> String {
 }
 ```
 
-- [ ] **Step 3: Thread `db_path` into the keychain functions.** Change the signatures:
+- [x] **Step 3: Thread `db_path` into the keychain functions.** Change the signatures:
 
 ```rust
 pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
@@ -1738,7 +1738,7 @@ impl MasterPasswordSource for SystemUnlock<'_> {
 
 Update `unlock_with_fallback` to construct `SystemUnlock { db_path: &ctx.db_path }`.
 
-- [ ] **Step 4: Update all call sites** of `UnlockContext { keyfile }`, `store_master_in_keystore`, `keystore_has_master`, and `SystemUnlock`. Search:
+- [x] **Step 4: Update all call sites** of `UnlockContext { keyfile }`, `store_master_in_keystore`, `keystore_has_master`, and `SystemUnlock`. Search:
 
 ```powershell
 Select-String -Path crates/**/*.rs -Pattern 'UnlockContext \{|store_master_in_keystore|keystore_has_master|SystemUnlock'
@@ -1749,7 +1749,7 @@ Update:
 - `commands/init.rs`: pass `db_path` to `store_master_in_keystore(&db_path, &master)` in both `verify_existing` and `create_new`; build `UnlockContext` with `db_path`.
 - All test modules constructing `UnlockContext { keyfile: None }` → add `db_path: PathBuf::from("test.kdbx")` (or the test's actual path). Search and fix each.
 
-- [ ] **Step 5: Write a test** that two different db paths produce different accounts:
+- [x] **Step 5: Write a test** that two different db paths produce different accounts:
 
 ```rust
     #[test]
@@ -1761,12 +1761,12 @@ Update:
     }
 ```
 
-- [ ] **Step 6: Run tests.**
+- [x] **Step 6: Run tests.**
 
 Run: `cargo test -p kprun-core; cargo test -p kprun`
 Expected: pass after all `UnlockContext` constructions are updated.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```powershell
 git add Cargo.toml crates/kprun-core/Cargo.toml crates/kprun-core/src/unlock.rs crates/kprun/src/commands/mod.rs crates/kprun/src/commands/init.rs
@@ -1779,14 +1779,14 @@ git commit -m "feat(core)!: derive keychain account per vault path (M-2)"
 - Create: `crates/kprun/src/commands/deinit.rs`
 - Modify: `crates/kprun/src/cli.rs`, `crates/kprun/src/commands/mod.rs`
 
-- [ ] **Step 1: Add the `Deinit` subcommand** in `cli.rs`:
+- [x] **Step 1: Add the `Deinit` subcommand** in `cli.rs`:
 
 ```rust
     /// Remove the stored master password for the current vault from the OS keychain.
     Deinit,
 ```
 
-- [ ] **Step 2: Create `commands/deinit.rs`:**
+- [x] **Step 2: Create `commands/deinit.rs`:**
 
 ```rust
 use kprun_core::config::Config;
@@ -1807,14 +1807,14 @@ pub fn execute() -> i32 {
 }
 ```
 
-- [ ] **Step 3: Wire it up** in `commands/mod.rs`: add `mod deinit;` and the dispatch arm `Commands::Deinit => std::process::exit(deinit::execute()),`.
+- [x] **Step 3: Wire it up** in `commands/mod.rs`: add `mod deinit;` and the dispatch arm `Commands::Deinit => std::process::exit(deinit::execute()),`.
 
-- [ ] **Step 4: Build + smoke test.**
+- [x] **Step 4: Build + smoke test.**
 
 Run: `cargo build -p kprun`; `cargo run -p kprun -- deinit --help`
 Expected: builds; help shows the command.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/deinit.rs crates/kprun/src/cli.rs crates/kprun/src/commands/mod.rs
@@ -1826,9 +1826,9 @@ git commit -m "feat(cli): add deinit to clear stored master from keychain (L-5)"
 **Files:**
 - Modify: `crates/kprun/src/commands/mod.rs` (unlock fallback notice)
 
-- [ ] **Step 1: Emit a one-time hint** when the keychain has no entry for this vault (e.g. legacy users after the keying change). In `unlock_vault`, when `unlock_with_fallback` falls back to prompt because the per-vault account is missing, the existing prompt flow already handles it — add a stderr hint in `init`'s `verify_existing` after a successful store: no code needed beyond existing messages. Document the migration in the changelog instead.
+- [x] **Step 1: Emit a one-time hint** when the keychain has no entry for this vault (e.g. legacy users after the keying change). In `unlock_vault`, when `unlock_with_fallback` falls back to prompt because the per-vault account is missing, the existing prompt flow already handles it — add a stderr hint in `init`'s `verify_existing` after a successful store: no code needed beyond existing messages. Document the migration in the changelog instead.
 
-- [ ] **Step 2: Append BREAKING note to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 2: Append BREAKING note to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Keychain
@@ -1837,7 +1837,7 @@ git commit -m "feat(cli): add deinit to clear stored master from keychain (L-5)"
 - Added `kprun deinit` to remove the stored master password for the current vault. (L-5)
 ```
 
-- [ ] **Step 3: Verify + push + PR.**
+- [x] **Step 3: Verify + push + PR.**
 
 ```powershell
 cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features
@@ -1859,7 +1859,7 @@ gh pr create --title "feat(cli): keychain lifecycle (BREAKING)" --body "Implemen
 **Files:**
 - Modify: `crates/kprun/src/commands/get.rs:22-27`
 
-- [ ] **Step 1: Add an audit record in the `keys_only` branch:**
+- [x] **Step 1: Add an audit record in the `keys_only` branch:**
 
 ```rust
     if keys_only {
@@ -1874,12 +1874,12 @@ gh pr create --title "feat(cli): keychain lifecycle (BREAKING)" --body "Implemen
     }
 ```
 
-- [ ] **Step 2: Build + run get tests.**
+- [x] **Step 2: Build + run get tests.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/get.rs
@@ -1891,11 +1891,11 @@ git commit -m "feat(cli): record audit entry for get --keys (Bugbot)"
 **Files:**
 - Modify: `crates/kprun/src/commands/doctor.rs:89-98`
 
-- [ ] **Step 1: Read the doctor MCP suggestion block.**
+- [x] **Step 1: Read the doctor MCP suggestion block.**
 
 Run: open `crates/kprun/src/commands/doctor.rs`.
 
-- [ ] **Step 2: Replace the `npx -y @modelcontextprotocol/server-github` suggestion** with a version-pinned form and a note about lockfile/pinning, e.g. `npx -y @modelcontextprotocol/server-github@<pinned-version>` plus a printed caution that auto-install without a lockfile is a supply-chain risk. Use the current pinned version (look it up):
+- [x] **Step 2: Replace the `npx -y @modelcontextprotocol/server-github` suggestion** with a version-pinned form and a note about lockfile/pinning, e.g. `npx -y @modelcontextprotocol/server-github@<pinned-version>` plus a printed caution that auto-install without a lockfile is a supply-chain risk. Use the current pinned version (look it up):
 
 ```powershell
 (Invoke-RestMethod https://registry.npmjs.org/-/package/@modelcontextprotocol/server-github/dist-tags).latest
@@ -1903,12 +1903,12 @@ Run: open `crates/kprun/src/commands/doctor.rs`.
 
 Embed that exact version in the suggestion string.
 
-- [ ] **Step 3: Build.**
+- [x] **Step 3: Build.**
 
 Run: `cargo build -p kprun`
 Expected: clean.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/doctor.rs
@@ -1920,14 +1920,14 @@ git commit -m "fix(cli): pin npx MCP server version in doctor suggestion (L-2)"
 **Files:**
 - Modify: `crates/kprun/src/commands/doctor.rs:36-38`, `crates/kprun/src/commands/init.rs:30,47,67`
 
-- [ ] **Step 1: Review each `eprintln!`/error that prints a full path** in those locations. For user-facing operational hints keep paths (they are intentional UX), but for error contexts that may be logged, print only the file name via `Path::file_name()`. Decide per line; conservative change: in `doctor.rs:36-38` error branch, replace `path.display()` with `path.file_name().map(|f| f.to_string_lossy()).unwrap_or_default()`.
+- [x] **Step 1: Review each `eprintln!`/error that prints a full path** in those locations. For user-facing operational hints keep paths (they are intentional UX), but for error contexts that may be logged, print only the file name via `Path::file_name()`. Decide per line; conservative change: in `doctor.rs:36-38` error branch, replace `path.display()` with `path.file_name().map(|f| f.to_string_lossy()).unwrap_or_default()`.
 
-- [ ] **Step 2: Build + doctor test.**
+- [x] **Step 2: Build + doctor test.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/doctor.rs crates/kprun/src/commands/init.rs
@@ -1939,7 +1939,7 @@ git commit -m "fix(cli): avoid leaking full paths in error output (L-3)"
 **Files:**
 - Modify: `crates/kprun-core/src/unlock.rs:52-59`
 
-- [ ] **Step 1: Feature-gate `FixedUnlock`** so it is not part of the public API in release builds:
+- [x] **Step 1: Feature-gate `FixedUnlock`** so it is not part of the public API in release builds:
 
 ```rust
 /// Test helper — production code uses SystemUnlock then PromptUnlock fallback.
@@ -1954,14 +1954,14 @@ impl MasterPasswordSource for FixedUnlock {
 }
 ```
 
-- [ ] **Step 2: Move/guard its test.** The `fixed_unlock_returns_password` test must also be gated; wrap it in `#[cfg(feature = "test-hooks")]`.
+- [x] **Step 2: Move/guard its test.** The `fixed_unlock_returns_password` test must also be gated; wrap it in `#[cfg(feature = "test-hooks")]`.
 
-- [ ] **Step 3: Build both ways.**
+- [x] **Step 3: Build both ways.**
 
 Run: `cargo build -p kprun-core`; `cargo test -p kprun-core --all-features`
 Expected: default build excludes `FixedUnlock`; all-features build runs its test.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun-core/src/unlock.rs
@@ -1973,7 +1973,7 @@ git commit -m "refactor(core): gate FixedUnlock behind test-hooks feature (code-
 **Files:**
 - Modify: `crates/kprun/src/commands/import.rs:179`
 
-- [ ] **Step 1: Decide policy.** L-1 flags that `value.trim()` silently alters secrets with intentional surrounding whitespace. Now that Phase 4 quotes/escapes exported values, change import to preserve inner whitespace of quoted values while still trimming unquoted ones. Implement: if the value is wrapped in double quotes, strip the quotes and unescape `\\n`/`\\r`/`\\\\` without trimming; otherwise keep the existing `.trim()`:
+- [x] **Step 1: Decide policy.** L-1 flags that `value.trim()` silently alters secrets with intentional surrounding whitespace. Now that Phase 4 quotes/escapes exported values, change import to preserve inner whitespace of quoted values while still trimming unquoted ones. Implement: if the value is wrapped in double quotes, strip the quotes and unescape `\\n`/`\\r`/`\\\\` without trimming; otherwise keep the existing `.trim()`:
 
 ```rust
         if let Some((key, value)) = line.split_once('=') {
@@ -2000,7 +2000,7 @@ git commit -m "refactor(core): gate FixedUnlock behind test-hooks feature (code-
         } else {
 ```
 
-- [ ] **Step 2: Write a round-trip test** (export with newline → import → value preserved). Add to `import.rs` tests (create module if needed) using the `parse_dotenv_import` directly:
+- [x] **Step 2: Write a round-trip test** (export with newline → import → value preserved). Add to `import.rs` tests (create module if needed) using the `parse_dotenv_import` directly:
 
 ```rust
 #[cfg(test)]
@@ -2017,12 +2017,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Run tests.**
+- [x] **Step 3: Run tests.**
 
 Run: `cargo test -p kprun imports_quoted_value_with_escaped_newline`
 Expected: pass.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/import.rs
@@ -2034,9 +2034,9 @@ git commit -m "fix(cli): preserve quoted dotenv values on import (L-1)"
 **Files:**
 - Modify: `README.md:163`, `SECURITY.md`
 
-- [ ] **Step 1: Fix `README.md` `KPRUN_TEST_MASTER` docs** to state it only works in builds with `--features test-hooks` and is absent from GitHub Release binaries. (L-4)
+- [x] **Step 1: Fix `README.md` `KPRUN_TEST_MASTER` docs** to state it only works in builds with `--features test-hooks` and is absent from GitHub Release binaries. (L-4)
 
-- [ ] **Step 2: Expand `SECURITY.md`** with sections (sentence-case headings):
+- [x] **Step 2: Expand `SECURITY.md`** with sections (sentence-case headings):
   - "File permissions" — owner-only on Unix/Windows (Phase 1).
   - "Keychain storage" — master password stored as plaintext in the OS keychain; per-vault keying; `kprun deinit` to remove.
   - "Process environment exposure" — injected secrets visible in `/proc/<pid>/environ`, Process Explorer, `ps e`; `--clean-env` available.
@@ -2061,7 +2061,7 @@ RWQ...   # paste the real public key produced during the key ceremony
 
   - "test-hooks scope" — `KPRUN_TEST_MASTER` only in `--features test-hooks` builds.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ```powershell
 git add README.md SECURITY.md
@@ -2070,7 +2070,7 @@ git commit -m "docs: document security model and release verification (L-4)"
 
 ### Task 7.7: Changelog + PR + release
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Low priority
@@ -2087,12 +2087,12 @@ git commit -m "docs: document security model and release verification (L-4)"
 - SECURITY.md documents file permissions, keychain storage, process env exposure, and minisign release verification.
 ```
 
-- [ ] **Step 2: Final verification.**
+- [x] **Step 2: Final verification.**
 
 Run: `cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
 Expected: clean.
 
-- [ ] **Step 3: Push + PR.**
+- [x] **Step 3: Push + PR.**
 
 ```powershell
 git add docs/changelogs/v0.2.0.md

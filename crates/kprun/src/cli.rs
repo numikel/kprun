@@ -23,6 +23,9 @@ pub enum Commands {
     },
     /// kprun run <entry>... -- <command> [args...]
     Run {
+        /// Inject only vault secrets and a minimal safe environment, dropping the parent environment.
+        #[arg(long)]
+        clean_env: bool,
         #[arg(num_args = 1.., value_terminator = "--", required = true)]
         entries: Vec<String>,
         #[arg(
@@ -62,6 +65,9 @@ pub enum Commands {
         stdout: bool,
         #[arg(long)]
         reveal: bool,
+        /// Write to this path instead of the default kprun-export.* in the current directory.
+        #[arg(long)]
+        output: Option<String>,
     },
     Import {
         file: String,
@@ -72,6 +78,8 @@ pub enum Commands {
         #[arg(long)]
         mcp: Option<String>,
     },
+    /// Remove the stored master password for the current vault from the OS keychain.
+    Deinit,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
