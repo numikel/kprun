@@ -23,6 +23,9 @@ pub enum Commands {
     },
     /// kprun run <entry>... -- <command> [args...]
     Run {
+        /// Inject only vault secrets and a minimal safe environment, dropping the parent environment.
+        #[arg(long)]
+        clean_env: bool,
         #[arg(num_args = 1.., value_terminator = "--", required = true)]
         entries: Vec<String>,
         #[arg(

@@ -23,7 +23,11 @@ pub fn resolve_executable(cmd: &str) -> PathBuf {
     PathBuf::from(cmd)
 }
 
-pub fn run_child(command: &[String], extra_env: &HashMap<String, String>) -> std::io::Result<i32> {
+pub fn run_child(
+    command: &[String],
+    extra_env: &HashMap<String, String>,
+    clean: bool,
+) -> std::io::Result<i32> {
     if command.is_empty() {
         return Ok(1);
     }
@@ -33,11 +37,35 @@ pub fn run_child(command: &[String], extra_env: &HashMap<String, String>) -> std
     cmd.stdin(std::process::Stdio::inherit());
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
-    let mut env_map: HashMap<OsString, OsString> = env::vars_os().collect();
-    for (k, v) in extra_env {
-        env_map.insert(OsString::from(k), OsString::from(v));
+
+    if clean {
+        cmd.env_clear();
+        for key in [
+            "PATH",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+            "SystemRoot",
+            "USERPROFILE",
+        ] {
+            if let Some(val) = env::var_os(key) {
+                cmd.env(key, val);
+            }
+        }
+        for (k, v) in extra_env {
+            cmd.env(OsString::from(k), OsString::from(v));
+        }
+    } else {
+        let mut env_map: HashMap<OsString, OsString> = env::vars_os().collect();
+        for (k, v) in extra_env {
+            env_map.insert(OsString::from(k), OsString::from(v));
+        }
+        cmd.envs(env_map);
     }
-    cmd.envs(env_map);
+
     let status = cmd.status()?;
     Ok(status.code().unwrap_or(1))
 }
