@@ -2,10 +2,10 @@ use crate::{KprunError, Result};
 
 pub fn parse_key_val(input: &str) -> Result<(String, String)> {
     let Some((key, value)) = input.split_once('=') else {
-        return Err(KprunError::InvalidKeyVal(input.to_string()));
+        return Err(KprunError::InvalidKeyVal);
     };
     if key.is_empty() {
-        return Err(KprunError::EmptyKey(input.to_string()));
+        return Err(KprunError::EmptyKey);
     }
     Ok((key.to_string(), value.to_string()))
 }
@@ -39,7 +39,15 @@ mod tests {
     #[test]
     fn parse_rejects_missing_equals() {
         let err = parse_key_val("NOEQUALS").unwrap_err();
-        assert!(matches!(err, KprunError::InvalidKeyVal(_)));
+        assert!(matches!(err, KprunError::InvalidKeyVal));
+    }
+
+    #[test]
+    fn parse_errors_do_not_echo_full_input() {
+        let e1 = parse_key_val("no-equals-but-sensitive").unwrap_err();
+        assert!(!e1.to_string().contains("no-equals-but-sensitive"));
+        let e2 = parse_key_val("=value-after-empty-key").unwrap_err();
+        assert!(!e2.to_string().contains("value-after-empty-key"));
     }
 
     #[test]

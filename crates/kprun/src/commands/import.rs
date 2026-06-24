@@ -168,7 +168,7 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
         if let Some((key, value)) = line.split_once('=') {
             let key = key.trim();
             if key.is_empty() {
-                return Err(KprunError::EmptyKey(line.to_string()));
+                return Err(KprunError::EmptyKey);
             }
             if current_title.is_none() {
                 return Err(KprunError::Other(
@@ -176,7 +176,7 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
                 ));
             }
             saw_key_value = true;
-            pairs.push((key.to_string(), value.trim().to_string()));
+            pairs.push((key.to_string(), parse_dotenv_value(value.trim())));
         } else {
             return Err(KprunError::Other(format!(
                 "invalid dotenv import line: {line}"
@@ -193,4 +193,36 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     }
 
     Ok(entries)
+}
+
+/// Parse a dotenv value, unquoting and unescaping when wrapped in double quotes.
+fn parse_dotenv_value(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2 && bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"' {
+        unescape_dotenv_value(&raw[1..raw.len() - 1])
+    } else {
+        raw.to_string()
+    }
+}
+
+fn unescape_dotenv_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
