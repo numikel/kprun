@@ -187,6 +187,43 @@ Notes:
 - `import` without `--merge` replaces vault content; structure-only dotenv exports are rejected to prevent accidental wipes.
 - Exit codes: `1` for DB not found, entry not found, unlock failed, DB locked; child exit code propagated; empty injection → `0` with stderr warning.
 
+### Export and import
+
+`import` accepts JSON (`.json`) or kprun dotenv (`.env`). JSON is the structured format from `kprun export --stdout`. Dotenv is **not** a generic project `.env` file — it is the round-trip format produced by `kprun export --format dotenv`.
+
+Each vault **entry** is a comment line with the entry title, followed by `KEY=value` lines. Separate entries with a blank line:
+
+```env
+# github
+GITHUB_TOKEN="ghp_xxx"
+
+# postgres
+DATABASE_URL="postgres://local"
+```
+
+To migrate a flat project `.env` (keys only, no title comments), add one title line at the top. All following keys land in that entry until the next `# title` or blank line:
+
+```env
+# default
+OPENAI_API_KEY="sk-..."
+LANGFUSE_SECRET_KEY="sk-lf-..."
+```
+
+Then import:
+
+```bash
+kprun import secrets.env --merge   # add/update keys; keep other vault entries
+kprun import secrets.env           # replace vault content with file entries
+```
+
+Inspect the canonical dotenv layout with:
+
+```bash
+kprun export --format dotenv --stdout --reveal
+```
+
+Structure-only dotenv exports (key names in `#` comments, no values) cannot be imported — re-export with `--reveal` first.
+
 ## MCP integration
 
 MCP clients spawn a command and talk over the child's stdio. Use `kprun run` as a transparent wrapper.
