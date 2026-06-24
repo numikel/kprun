@@ -139,7 +139,7 @@ impl Vault {
             Ok(id) => {
                 if let Some(mut entry) = self.db.entry_mut(id) {
                     for (k, v) in pairs {
-                        entry.set_unprotected(k.clone(), v.clone());
+                        entry.set_protected(k.clone(), v.clone());
                     }
                 }
                 Ok(())
@@ -148,7 +148,7 @@ impl Vault {
                 self.db.root_mut().add_entry().edit(|e| {
                     e.set_unprotected(fields::TITLE, title_owned);
                     for (k, v) in pairs {
-                        e.set_unprotected(k.clone(), v.clone());
+                        e.set_protected(k.clone(), v.clone());
                     }
                 });
                 Ok(())
@@ -285,6 +285,27 @@ mod tests {
             vals.get("OPENAI_API_KEY").map(String::as_str),
             Some("sk-test")
         );
+    }
+
+    #[test]
+    fn set_attributes_stores_protected_values() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("prot.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes("svc", &[("SECRET".into(), "sk-protected".into())])
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        // Reopen and confirm the value round-trips via the unprotecting getter.
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        assert_eq!(vals.get("SECRET").map(String::as_str), Some("sk-protected"));
     }
 
     #[test]
