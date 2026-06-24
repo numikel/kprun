@@ -6,7 +6,10 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use predicates::prelude::PredicateBooleanExt;
 
 fn setup_openai_vault(db: &Path) {
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -75,7 +78,10 @@ fn get_reveal_audits_access() {
 fn set_unset_delete_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&db, key, "kprun").unwrap();
 

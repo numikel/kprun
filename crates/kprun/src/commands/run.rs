@@ -21,6 +21,7 @@ fn run_inner(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> Res
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
+        db_path: cfg.db_path.clone(),
     };
 
     let master = unlock_with_fallback(&ctx)?;

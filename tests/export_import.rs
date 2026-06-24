@@ -6,7 +6,10 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use serde_json::Value;
 
 fn setup_multi_entry_vault(db: &Path) {
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -289,7 +292,10 @@ fn import_dotenv_roundtrip() {
         .clone();
     std::fs::write(&export_file, &exported).unwrap();
 
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&import_db, key, "kprun").unwrap();
 
@@ -315,7 +321,10 @@ fn import_dotenv_trims_value_whitespace() {
     let db = dir.path().join("secrets.kdbx");
     let import_file = dir.path().join("trim.env");
 
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&db, key, "kprun").unwrap();
 

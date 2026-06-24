@@ -46,6 +46,7 @@ fn reads_keepassxc_fixture() {
 
     let ctx = UnlockContext {
         keyfile: std::env::var_os("KPRUN_KEYFILE").map(PathBuf::from),
+        db_path: path.clone(),
     };
     let key = build_database_key(&ctx, &master).expect("failed to build database key");
     let vault =

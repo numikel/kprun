@@ -135,13 +135,17 @@ mod tests {
     use super::*;
     use kprun_core::unlock::{build_database_key, UnlockContext};
     use kprun_core::vault::{create_vault, open_vault, OpenMode};
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
     fn dotenv_export_escapes_newlines() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("e.kdbx");
-        let ctx = UnlockContext { keyfile: None };
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
         let key = build_database_key(&ctx, "pass").unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
         let mut v = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();

@@ -78,6 +78,8 @@ pub enum Commands {
         #[arg(long)]
         mcp: Option<String>,
     },
+    /// Remove the stored master password for the current vault from the OS keychain.
+    Deinit,
 }
 
 #[derive(Clone, Copy, ValueEnum)]

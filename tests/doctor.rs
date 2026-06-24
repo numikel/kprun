@@ -6,7 +6,10 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use serde_json::Value;
 
 fn setup_vault(db: &Path) {
-    let ctx = UnlockContext { keyfile: None };
+    let ctx = UnlockContext {
+        keyfile: None,
+        db_path: db.to_path_buf(),
+    };
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();

@@ -1661,7 +1661,7 @@ gh pr create --title "feat(core): env injection safety" --body "Implements env b
 **Files:**
 - Modify: `crates/kprun-core/Cargo.toml` and workspace `Cargo.toml` (add `sha2`), `crates/kprun-core/src/unlock.rs`
 
-- [ ] **Step 1: Add `sha2` dependency.** Check latest version:
+- [x] **Step 1: Add `sha2` dependency.** Check latest version:
 
 ```powershell
 (Invoke-RestMethod https://crates.io/api/v1/crates/sha2).crate.max_stable_version
@@ -1669,7 +1669,7 @@ gh pr create --title "feat(core): env injection safety" --body "Implements env b
 
 Add to workspace `Cargo.toml` `[workspace.dependencies]`: `sha2 = "<latest>"`. Add to `crates/kprun-core/Cargo.toml` `[dependencies]`: `sha2 = { workspace = true }`.
 
-- [ ] **Step 2: Replace constant USER with a per-vault account derived from db path.** In `unlock.rs`:
+- [x] **Step 2: Replace constant USER with a per-vault account derived from db path.** In `unlock.rs`:
 
 ```rust
 const SERVICE: &str = "kprun";
@@ -1687,7 +1687,7 @@ fn keychain_account(db_path: &Path) -> String {
 }
 ```
 
-- [ ] **Step 3: Thread `db_path` into the keychain functions.** Change the signatures:
+- [x] **Step 3: Thread `db_path` into the keychain functions.** Change the signatures:
 
 ```rust
 pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
@@ -1738,7 +1738,7 @@ impl MasterPasswordSource for SystemUnlock<'_> {
 
 Update `unlock_with_fallback` to construct `SystemUnlock { db_path: &ctx.db_path }`.
 
-- [ ] **Step 4: Update all call sites** of `UnlockContext { keyfile }`, `store_master_in_keystore`, `keystore_has_master`, and `SystemUnlock`. Search:
+- [x] **Step 4: Update all call sites** of `UnlockContext { keyfile }`, `store_master_in_keystore`, `keystore_has_master`, and `SystemUnlock`. Search:
 
 ```powershell
 Select-String -Path crates/**/*.rs -Pattern 'UnlockContext \{|store_master_in_keystore|keystore_has_master|SystemUnlock'
@@ -1749,7 +1749,7 @@ Update:
 - `commands/init.rs`: pass `db_path` to `store_master_in_keystore(&db_path, &master)` in both `verify_existing` and `create_new`; build `UnlockContext` with `db_path`.
 - All test modules constructing `UnlockContext { keyfile: None }` → add `db_path: PathBuf::from("test.kdbx")` (or the test's actual path). Search and fix each.
 
-- [ ] **Step 5: Write a test** that two different db paths produce different accounts:
+- [x] **Step 5: Write a test** that two different db paths produce different accounts:
 
 ```rust
     #[test]
@@ -1761,12 +1761,12 @@ Update:
     }
 ```
 
-- [ ] **Step 6: Run tests.**
+- [x] **Step 6: Run tests.**
 
 Run: `cargo test -p kprun-core; cargo test -p kprun`
 Expected: pass after all `UnlockContext` constructions are updated.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```powershell
 git add Cargo.toml crates/kprun-core/Cargo.toml crates/kprun-core/src/unlock.rs crates/kprun/src/commands/mod.rs crates/kprun/src/commands/init.rs
@@ -1779,14 +1779,14 @@ git commit -m "feat(core)!: derive keychain account per vault path (M-2)"
 - Create: `crates/kprun/src/commands/deinit.rs`
 - Modify: `crates/kprun/src/cli.rs`, `crates/kprun/src/commands/mod.rs`
 
-- [ ] **Step 1: Add the `Deinit` subcommand** in `cli.rs`:
+- [x] **Step 1: Add the `Deinit` subcommand** in `cli.rs`:
 
 ```rust
     /// Remove the stored master password for the current vault from the OS keychain.
     Deinit,
 ```
 
-- [ ] **Step 2: Create `commands/deinit.rs`:**
+- [x] **Step 2: Create `commands/deinit.rs`:**
 
 ```rust
 use kprun_core::config::Config;
@@ -1807,14 +1807,14 @@ pub fn execute() -> i32 {
 }
 ```
 
-- [ ] **Step 3: Wire it up** in `commands/mod.rs`: add `mod deinit;` and the dispatch arm `Commands::Deinit => std::process::exit(deinit::execute()),`.
+- [x] **Step 3: Wire it up** in `commands/mod.rs`: add `mod deinit;` and the dispatch arm `Commands::Deinit => std::process::exit(deinit::execute()),`.
 
-- [ ] **Step 4: Build + smoke test.**
+- [x] **Step 4: Build + smoke test.**
 
 Run: `cargo build -p kprun`; `cargo run -p kprun -- deinit --help`
 Expected: builds; help shows the command.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/deinit.rs crates/kprun/src/cli.rs crates/kprun/src/commands/mod.rs
@@ -1826,9 +1826,9 @@ git commit -m "feat(cli): add deinit to clear stored master from keychain (L-5)"
 **Files:**
 - Modify: `crates/kprun/src/commands/mod.rs` (unlock fallback notice)
 
-- [ ] **Step 1: Emit a one-time hint** when the keychain has no entry for this vault (e.g. legacy users after the keying change). In `unlock_vault`, when `unlock_with_fallback` falls back to prompt because the per-vault account is missing, the existing prompt flow already handles it — add a stderr hint in `init`'s `verify_existing` after a successful store: no code needed beyond existing messages. Document the migration in the changelog instead.
+- [x] **Step 1: Emit a one-time hint** when the keychain has no entry for this vault (e.g. legacy users after the keying change). In `unlock_vault`, when `unlock_with_fallback` falls back to prompt because the per-vault account is missing, the existing prompt flow already handles it — add a stderr hint in `init`'s `verify_existing` after a successful store: no code needed beyond existing messages. Document the migration in the changelog instead.
 
-- [ ] **Step 2: Append BREAKING note to `docs/changelogs/v0.2.0.md`:**
+- [x] **Step 2: Append BREAKING note to `docs/changelogs/v0.2.0.md`:**
 
 ```markdown
 ## Keychain
@@ -1837,7 +1837,7 @@ git commit -m "feat(cli): add deinit to clear stored master from keychain (L-5)"
 - Added `kprun deinit` to remove the stored master password for the current vault. (L-5)
 ```
 
-- [ ] **Step 3: Verify + push + PR.**
+- [x] **Step 3: Verify + push + PR.**
 
 ```powershell
 cargo fmt --all; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features
