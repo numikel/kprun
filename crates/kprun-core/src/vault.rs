@@ -80,7 +80,7 @@ pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Re
     }
     let mut db = Database::new();
     db.meta.database_name = Some(db_name.to_string());
-    let mut file = File::create(path)?;
+    let mut file = crate::secure_fs::create_restricted(path)?;
     db.save(&mut file, key).map_err(map_save_error)
 }
 
@@ -186,8 +186,7 @@ impl Vault {
         self.db
             .save(tmp.as_file_mut(), key)
             .map_err(map_save_error)?;
-        tmp.persist(&self.path)
-            .map_err(|e| KprunError::Io(e.error))?;
+        crate::secure_fs::persist_restricted(tmp, &self.path)?;
         Ok(())
     }
 
@@ -354,5 +353,18 @@ mod tests {
         let id = vault2.find_entry_by_title("svc").unwrap();
         let vals = vault2.entry_custom_values(id);
         assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_vault_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("perm.kdbx");
+        let ctx = UnlockContext { keyfile: None };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key, "kprun").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 }

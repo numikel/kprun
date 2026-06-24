@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use keepass::DatabaseKey;
@@ -120,8 +119,7 @@ pub fn generate_keyfile(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut f = File::create(path)?;
-    f.write_all(&bytes)?;
+    crate::secure_fs::write_restricted(path, &bytes)?;
     Ok(())
 }
 
@@ -141,5 +139,17 @@ mod tests {
         let ctx = UnlockContext { keyfile: None };
         let pw = unlock_master(&ctx, &src).unwrap();
         assert_eq!(&*pw, "secret");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generate_keyfile_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let kf = dir.path().join("kprun.keyfile");
+        generate_keyfile(&kf).unwrap();
+        assert_eq!(std::fs::read(&kf).unwrap().len(), 64);
+        let mode = std::fs::metadata(&kf).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 }
