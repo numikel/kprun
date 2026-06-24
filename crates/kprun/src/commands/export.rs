@@ -6,6 +6,7 @@ use kprun_core::Result;
 use serde_json::{json, Value};
 
 use crate::cli::ExportFormat;
+use crate::ui;
 
 use super::unlock_vault;
 
@@ -20,6 +21,9 @@ pub fn execute(format: ExportFormat, stdout: bool, reveal: bool, output: Option<
 }
 
 fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> Result<()> {
+    if !stdout {
+        ui::maybe_banner();
+    }
     let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let summaries = vault.list_entries();
 
@@ -58,7 +62,7 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
             );
         }
         kprun_core::secure_fs::write_restricted(&path, output_str.as_bytes())?;
-        eprintln!("wrote export to {}", path.display());
+        ui::success(&format!("Wrote export to {}", path.display()));
     }
 
     Ok(())

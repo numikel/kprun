@@ -2,6 +2,8 @@ use kprun_core::audit::{log_access, AuditRecord};
 use kprun_core::vault::OpenMode;
 use kprun_core::Result;
 
+use crate::ui;
+
 use super::unlock_vault;
 
 pub fn execute(entry: String, keys_only: bool, reveal: bool) -> i32 {
@@ -15,6 +17,7 @@ pub fn execute(entry: String, keys_only: bool, reveal: bool) -> i32 {
 }
 
 fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
+    ui::maybe_banner();
     let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let id = vault.find_entry_by_title(entry)?;
     let keys = vault.entry_custom_keys(id);

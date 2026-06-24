@@ -10,6 +10,8 @@ use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use kprun_core::{KprunError, Result};
 use zeroize::Zeroizing;
 
+use crate::ui;
+
 const MIN_MASTER_LEN: usize = 12;
 
 pub fn execute(db: Option<String>, no_store: bool, keyfile: Option<String>) -> i32 {
@@ -23,13 +25,15 @@ pub fn execute(db: Option<String>, no_store: bool, keyfile: Option<String>) -> i
 }
 
 fn run(db: Option<String>, no_store: bool, keyfile: Option<String>) -> Result<()> {
+    ui::maybe_banner();
+
     let cfg = Config::from_env();
     let db_path = db.map(PathBuf::from).unwrap_or_else(|| cfg.db_path.clone());
     let keyfile_path = keyfile.map(PathBuf::from).or_else(|| cfg.keyfile.clone());
 
     if let Some(ref kf) = keyfile_path {
         if !kf.exists() {
-            eprintln!("Generating keyfile at {}", kf.display());
+            ui::info(&format!("Generating keyfile at {}", kf.display()));
             generate_keyfile(kf)?;
         }
     }
@@ -47,34 +51,56 @@ fn run(db: Option<String>, no_store: bool, keyfile: Option<String>) -> Result<()
 }
 
 fn verify_existing(ctx: &UnlockContext, db_path: &Path, no_store: bool) -> Result<()> {
-    eprintln!("Verifying database at {}", db_path.display());
+    let total = if no_store { 1 } else { 2 };
+    ui::step(
+        1,
+        total,
+        &format!("Verifying database at {}", db_path.display()),
+    );
     let master = unlock_with_fallback(ctx)?;
     let db_key = build_database_key(ctx, &master)?;
     let _vault = open_vault(db_path, db_key, OpenMode::ReadOnly)?;
 
     if !no_store {
+        ui::step(2, total, "Storing master password in OS keychain");
         store_master_in_keystore(db_path, &master)?;
-        eprintln!("Master password stored in OS keychain.");
     }
 
-    eprintln!("Database verified successfully.");
-    eprintln!("Hint: use `kprun set <entry> KEY=val ...` to add secrets.");
+    ui::success("Database verified");
+    ui::next_steps(&[
+        "kprun list",
+        "kprun set <entry> KEY=val ...",
+        "kprun doctor",
+    ]);
     Ok(())
 }
 
 fn create_new(cfg: &Config, db_path: &Path, ctx: &UnlockContext, no_store: bool) -> Result<()> {
     cfg.ensure_parent_dirs(db_path)?;
+    let total = if no_store { 2 } else { 3 };
+
+    ui::step(1, total, "Choose a master password (min 12 characters)");
     let master = prompt_new_master()?;
+
+    ui::step(
+        2,
+        total,
+        &format!("Creating KeePass database at {}", db_path.display()),
+    );
     let db_key = build_database_key(ctx, &master)?;
     create_vault(db_path, db_key, "kprun")?;
-    eprintln!("Created KeePass database at {}", db_path.display());
 
     if !no_store {
+        ui::step(3, total, "Storing master password in OS keychain");
         store_master_in_keystore(db_path, &master)?;
-        eprintln!("Master password stored in OS keychain.");
     }
 
-    eprintln!("Hint: use `kprun set <entry> KEY=val ...` to add secrets.");
+    ui::success(&format!("Vault ready at {}", db_path.display()));
+    ui::next_steps(&[
+        "kprun set github GITHUB_TOKEN=ghp_xxx",
+        "kprun run github -- npx @modelcontextprotocol/server-github",
+        "kprun doctor --mcp github",
+    ]);
     Ok(())
 }
 

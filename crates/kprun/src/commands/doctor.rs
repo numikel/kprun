@@ -6,6 +6,8 @@ use kprun_core::vault::{open_vault, OpenMode};
 use kprun_core::Result;
 use serde_json::json;
 
+use crate::ui;
+
 pub fn execute(mcp: Option<String>) -> i32 {
     match run(mcp) {
         Ok(()) => 0,
@@ -27,6 +29,7 @@ fn run(mcp: Option<String>) -> Result<()> {
 }
 
 fn print_diagnostics() -> Result<()> {
+    ui::maybe_banner();
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),

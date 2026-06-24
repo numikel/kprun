@@ -7,6 +7,7 @@ use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
 use super::unlock_vault;
+use crate::ui;
 
 pub fn execute(file: String, merge: bool) -> i32 {
     match run(&file, merge) {
@@ -30,6 +31,7 @@ struct ImportEntry {
 }
 
 fn run(file: &str, merge: bool) -> Result<()> {
+    ui::maybe_banner();
     let path = Path::new(file);
     let content = fs::read_to_string(path)?;
     let entries = if path
@@ -78,6 +80,10 @@ fn run(file: &str, merge: bool) -> Result<()> {
     }
 
     vault.save_with_key(db_key)?;
+    let count = entries.len();
+    let noun = if count == 1 { "entry" } else { "entries" };
+    let mode = if merge { "merged into" } else { "imported into" };
+    ui::success(&format!("{count} {noun} {mode} vault"));
     Ok(())
 }
 

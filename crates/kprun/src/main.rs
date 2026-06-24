@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod spawn;
+mod ui;
 
 use clap::Parser;
 

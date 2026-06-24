@@ -13,6 +13,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Create or attach a KeePass vault and unlock it
     Init {
         #[arg(long)]
         db: Option<String>,
@@ -21,7 +22,7 @@ pub enum Commands {
         #[arg(long)]
         keyfile: Option<String>,
     },
-    /// kprun run <entry>... -- <command> [args...]
+    /// Inject vault secrets into a child process
     Run {
         /// Inject only vault secrets and a minimal safe environment, dropping the parent environment.
         #[arg(long)]
@@ -36,10 +37,12 @@ pub enum Commands {
         )]
         command: Vec<String>,
     },
+    /// List vault entries and their secret key names
     List {
         #[arg(long)]
         json: bool,
     },
+    /// Show custom fields for a vault entry
     Get {
         entry: String,
         #[arg(long)]
@@ -47,17 +50,21 @@ pub enum Commands {
         #[arg(long)]
         reveal: bool,
     },
+    /// Set or update secret fields on a vault entry
     Set {
         entry: String,
         pairs: Vec<String>,
     },
+    /// Remove secret fields from a vault entry
     Unset {
         entry: String,
         keys: Vec<String>,
     },
+    /// Delete a vault entry
     Delete {
         entry: String,
     },
+    /// Export vault entries to JSON or dotenv
     Export {
         #[arg(long, value_enum, default_value_t = ExportFormat::Json)]
         format: ExportFormat,
@@ -69,11 +76,13 @@ pub enum Commands {
         #[arg(long)]
         output: Option<String>,
     },
+    /// Import entries from JSON or dotenv into the vault
     Import {
         file: String,
         #[arg(long)]
         merge: bool,
     },
+    /// Diagnose configuration and print an MCP config snippet
     Doctor {
         #[arg(long)]
         mcp: Option<String>,

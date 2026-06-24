@@ -2,6 +2,8 @@ use kprun_core::vault::OpenMode;
 use kprun_core::Result;
 use serde::Serialize;
 
+use crate::ui;
+
 use super::unlock_vault;
 
 #[derive(Serialize)]
@@ -21,6 +23,9 @@ pub fn execute(json: bool) -> i32 {
 }
 
 fn run(json: bool) -> Result<()> {
+    if !json {
+        ui::maybe_banner();
+    }
     let (_cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let entries = vault.list_entries();
 
@@ -33,6 +38,8 @@ fn run(json: bool) -> Result<()> {
             })
             .collect();
         println!("{}", serde_json::to_string(&payload)?);
+    } else if entries.is_empty() {
+        ui::hint("No entries yet. Add secrets with: kprun set <entry> KEY=val ...");
     } else {
         println!("{:<20} KEYS", "TITLE");
         for e in &entries {
