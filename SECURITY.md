@@ -44,14 +44,15 @@ Injected secrets are visible to the child process and, on many systems, to other
 Release `checksums.txt` is signed with minisign. Verify with:
 
 ```sh
-minisign -Vm checksums.txt -P RWQ...   # kprun public key (see below)
+minisign -Vm checksums.txt -P RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr
 sha256sum -c checksums.txt
 ```
 
-kprun minisign public key (replace `RWQ...` after the release key ceremony):
+kprun minisign public key:
 
 ```
-RWQ...
+untrusted comment: minisign public key 89584AD2B53E15B8
+RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr
 ```
 
 Install scripts verify the minisign signature when `minisign` is available and a real public key is configured.

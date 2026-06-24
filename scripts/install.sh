@@ -105,7 +105,7 @@ verify_checksum() {
   info "Checksum verified."
 
   # Optional minisign verification (defense in depth on top of SHA-256).
-  KPRUN_MINISIGN_PUBKEY="RWQ..."   # published kprun release public key (replace during key ceremony)
+  KPRUN_MINISIGN_PUBKEY="RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr"
   MINISIG="${CHECKSUMS}.minisig"
   if [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1; then
     if [ -f "$MINISIG" ]; then

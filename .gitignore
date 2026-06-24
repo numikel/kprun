@@ -11,3 +11,6 @@ docs/*
 .docs/
 .ai/
 .worktrees/
+kprun-release.key
+kprun-release.pub
+target-alt/

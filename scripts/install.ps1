@@ -81,7 +81,7 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
     Write-Info 'Checksum verified.'
 
   # Optional minisign verification (defense in depth on top of SHA-256).
-  $KprunMinisignPubkey = 'RWQ...'   # published kprun release public key (replace during key ceremony)
+  $KprunMinisignPubkey = 'RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr'
   $minisigPath = "$ChecksumsPath.minisig"
   if ($KprunMinisignPubkey -ne 'RWQ...' -and (Get-Command minisign -ErrorAction SilentlyContinue)) {
     if (Test-Path $minisigPath) {
