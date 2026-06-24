@@ -572,7 +572,7 @@ gh pr create --title "feat(core): secure file permissions" --body "Implements H-
 **Files:**
 - Modify: `crates/kprun-core/src/vault.rs:134-158` (set_attributes)
 
-- [ ] **Step 1: Write the failing round-trip test.** In `vault.rs` tests:
+- [x] **Step 1: Write the failing round-trip test.** In `vault.rs` tests:
 
 ```rust
     #[test]
@@ -597,12 +597,12 @@ gh pr create --title "feat(core): secure file permissions" --body "Implements H-
     }
 ```
 
-- [ ] **Step 2: Run it to confirm it passes already (baseline) or fails.**
+- [x] **Step 2: Run it to confirm it passes already (baseline) or fails.**
 
 Run: `cargo test -p kprun-core set_attributes_stores_protected_values`
 Expected: PASS even before the change (because `entry.get()` unprotects automatically). This test guards the round-trip; the protected flag itself is the behavior change.
 
-- [ ] **Step 3: Change `set_unprotected` → `set_protected` in both branches of `set_attributes`:**
+- [x] **Step 3: Change `set_unprotected` → `set_protected` in both branches of `set_attributes`:**
 
 ```rust
     pub fn set_attributes(&mut self, title: &str, pairs: &[(String, String)]) -> Result<()> {
@@ -634,14 +634,14 @@ Expected: PASS even before the change (because `entry.get()` unprotects automati
 
 Note: `TITLE` stays `set_unprotected` (it is metadata, not a secret, and is read for listing). Only custom values become protected.
 
-- [ ] **Step 4: Run tests to confirm round-trip still passes.**
+- [x] **Step 4: Run tests to confirm round-trip still passes.**
 
 Run: `cargo test -p kprun-core vault`
 Expected: all pass, including the new test and existing `set_attributes_persists_after_reopen`.
 
 If `set_protected` is not available on the `edit` closure's parameter type, fall back to: build the entry, then look it up and apply `set_protected` via `entry_mut` after `add_entry`. (Confirmed `set_protected` exists on `keepass::db::Entry` 0.13.10.)
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```powershell
 git add crates/kprun-core/src/vault.rs
@@ -653,9 +653,9 @@ git commit -m "feat(core): store custom field values as protected (H-2)"
 **Files:**
 - Modify: `crates/kprun/src/commands/mod.rs:46-55`
 
-- [ ] **Step 1: Inspect callers.** `unlock_vault` returns `(Config, UnlockContext, Vault, DatabaseKey)` and clones `db_key` into `open_vault`. `open_vault` consumes the key. Callers that only read (`get`, `list`, `export`, `run`) ignore the returned `db_key` (bind it `_db_key`). Only write commands (`set`, `unset`, `delete`, `import`) need a key to save — and those already re-unlock or use `save_with_key`.
+- [x] **Step 1: Inspect callers.** `unlock_vault` returns `(Config, UnlockContext, Vault, DatabaseKey)` and clones `db_key` into `open_vault`. `open_vault` consumes the key. Callers that only read (`get`, `list`, `export`, `run`) ignore the returned `db_key` (bind it `_db_key`). Only write commands (`set`, `unset`, `delete`, `import`) need a key to save — and those already re-unlock or use `save_with_key`.
 
-- [ ] **Step 2: Split into read-only vs read-write helpers** to avoid keeping a second key copy for readers:
+- [x] **Step 2: Split into read-only vs read-write helpers** to avoid keeping a second key copy for readers:
 
 ```rust
 fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, DatabaseKey)> {
@@ -714,12 +714,12 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
 
 Use the simpler alternative: it removes `db_key.clone()` (which duplicated already-derived key material via `Clone`) and instead derives the second key directly from the still-alive `Zeroizing<String> master`, which is zeroized on drop. This avoids relying on `DatabaseKey: Clone` for secret material.
 
-- [ ] **Step 3: Run all CLI tests.**
+- [x] **Step 3: Run all CLI tests.**
 
 Run: `cargo test -p kprun`
 Expected: pass.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```powershell
 git add crates/kprun/src/commands/mod.rs
@@ -728,7 +728,7 @@ git commit -m "refactor(cli): derive caller key from master instead of cloning D
 
 ### Task 2.3: Changelog + verification + PR
 
-- [ ] **Step 1: Append to `docs/changelogs/v0.2.0.md`** under `## Security`:
+- [x] **Step 1: Append to `docs/changelogs/v0.2.0.md`** under `## Security`:
 
 ```markdown
 - Custom secret fields are now stored as KeePass protected (in-memory encrypted) values instead of plaintext. (H-2)
