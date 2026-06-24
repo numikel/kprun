@@ -1,4 +1,3 @@
-use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -39,10 +38,7 @@ impl AuditRecord {
 pub fn log_access(cfg: &Config, record: &AuditRecord) -> Result<()> {
     cfg.ensure_parent_dirs(&cfg.log_path)?;
     let line = serde_json::to_string(record)?;
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&cfg.log_path)?;
+    let mut f = crate::secure_fs::open_append_restricted(&cfg.log_path)?;
     writeln!(f, "{line}")?;
     Ok(())
 }
@@ -72,5 +68,21 @@ mod tests {
         let content = std::fs::read_to_string(log).unwrap();
         assert!(content.contains("OPENAI_API_KEY"));
         assert!(!content.contains("sk-"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn audit_log_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let log = dir.path().join("access.log");
+        let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
+        log_access(
+            &cfg,
+            &AuditRecord::new(PathBuf::from("/db.kdbx"), vec!["x".into()], vec!["K".into()], None),
+        )
+        .unwrap();
+        let mode = std::fs::metadata(&log).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 }
