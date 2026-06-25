@@ -1,26 +1,13 @@
+mod common;
+
 use std::path::Path;
 
-use assert_cmd::Command;
-use kprun_core::unlock::{build_database_key, UnlockContext};
-use kprun_core::vault::{create_vault, open_vault, OpenMode};
 use serde_json::Value;
 
-fn setup_vault(db: &Path) {
-    let ctx = UnlockContext {
-        keyfile: None,
-        db_path: db.to_path_buf(),
-    };
-    let key = build_database_key(&ctx, "pass").unwrap();
-    create_vault(db, key.clone(), "kprun").unwrap();
-    let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
-    vault
-        .set_attributes("github", &[("GITHUB_TOKEN".into(), "ghp_secret".into())])
-        .unwrap();
-    vault.save(key).unwrap();
-}
+use common::{create_vault_with_entries, kprun_cmd, test_env};
 
-fn kprun() -> Command {
-    Command::cargo_bin("kprun").unwrap()
+fn setup_vault(db: &Path) {
+    create_vault_with_entries(db, &[("github", &[("GITHUB_TOKEN", "ghp_secret")])]);
 }
 
 #[test]
@@ -29,9 +16,8 @@ fn doctor_reports_vault_unlock_and_binary() {
     let db = dir.path().join("secrets.kdbx");
     setup_vault(&db);
 
-    let output = kprun()
-        .env("KPRUN_DB", db.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
+    let output = kprun_cmd()
+        .envs(test_env(&db))
         .args(["doctor"])
         .assert()
         .success()
@@ -51,7 +37,7 @@ fn doctor_reports_vault_unlock_and_binary() {
 
 #[test]
 fn doctor_mcp_github_prints_json_fragment() {
-    let output = kprun()
+    let output = kprun_cmd()
         .args(["doctor", "--mcp", "github"])
         .assert()
         .success()
@@ -91,7 +77,7 @@ fn doctor_mcp_github_prints_json_fragment() {
 
 #[test]
 fn doctor_mcp_generic_entry_prints_placeholder_args() {
-    let assert = kprun()
+    let assert = kprun_cmd()
         .args(["doctor", "--mcp", "openai"])
         .assert()
         .success()
@@ -113,7 +99,7 @@ fn doctor_mcp_generic_entry_prints_placeholder_args() {
 
 #[test]
 fn doctor_mcp_with_child_command_prints_full_args() {
-    let output = kprun()
+    let output = kprun_cmd()
         .args([
             "doctor",
             "--mcp",

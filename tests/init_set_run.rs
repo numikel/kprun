@@ -1,21 +1,11 @@
+mod common;
+
 use std::path::Path;
 
-use assert_cmd::Command;
-use kprun_core::unlock::{build_database_key, UnlockContext};
-use kprun_core::vault::{create_vault, open_vault, OpenMode};
+use common::{create_vault_with_entries, kprun_cmd, test_env};
 
 fn setup_demo_vault(db: &Path) {
-    let ctx = UnlockContext {
-        keyfile: None,
-        db_path: db.to_path_buf(),
-    };
-    let key = build_database_key(&ctx, "pass").unwrap();
-    create_vault(db, key.clone(), "kprun").unwrap();
-    let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
-    vault
-        .set_attributes("demo", &[("DEMO_KEY".into(), "secret".into())])
-        .unwrap();
-    vault.save(key).unwrap();
+    create_vault_with_entries(db, &[("demo", &[("DEMO_KEY", "secret")])]);
 }
 
 #[test]
@@ -36,10 +26,8 @@ fn run_injects_env_var() {
         "secret\n"
     };
 
-    Command::cargo_bin("kprun")
-        .unwrap()
-        .env("KPRUN_DB", db.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["run", "demo", "--"])
         .args(child_args)
         .assert()
