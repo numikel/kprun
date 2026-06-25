@@ -1,3 +1,4 @@
+use kprun_core::audit::{log_access, AuditRecord};
 use kprun_core::config::Config;
 use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
 use kprun_core::vault::{open_vault, DatabaseKey, OpenMode, Vault};
@@ -83,4 +84,12 @@ where
     f(&mut vault)?;
     vault.save(db_key)?;
     Ok(())
+}
+
+fn warn_secret_display() {
+    eprintln!("WARNING: secret values are displayed in the terminal");
+}
+
+fn audit_access(cfg: &Config, record: AuditRecord) -> Result<()> {
+    log_access(cfg, &record)
 }

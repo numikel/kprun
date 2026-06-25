@@ -1,10 +1,10 @@
-use kprun_core::audit::{log_access, AuditRecord};
+use kprun_core::audit::AuditRecord;
 use kprun_core::vault::OpenMode;
 use kprun_core::Result;
 
 use crate::ui;
 
-use super::{run_command, unlock_vault};
+use super::{audit_access, run_command, unlock_vault, warn_secret_display};
 
 pub fn execute(entry: String, keys_only: bool, reveal: bool) -> i32 {
     run_command(|| run(&entry, keys_only, reveal))
@@ -20,9 +20,9 @@ fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
         for k in &keys {
             println!("{k}");
         }
-        log_access(
+        audit_access(
             &cfg,
-            &AuditRecord::new(
+            AuditRecord::new(
                 cfg.db_path.clone(),
                 vec![entry.to_string()],
                 keys.clone(),
@@ -33,16 +33,16 @@ fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
     }
 
     if reveal {
-        eprintln!("WARNING: secret values are displayed in the terminal");
+        warn_secret_display();
         let values = vault.entry_custom_values(id);
         for k in &keys {
             if let Some(v) = values.get(k) {
                 println!("{k}={v}");
             }
         }
-        log_access(
+        audit_access(
             &cfg,
-            &AuditRecord::new(cfg.db_path.clone(), vec![entry.to_string()], keys, None),
+            AuditRecord::new(cfg.db_path.clone(), vec![entry.to_string()], keys, None),
         )?;
         return Ok(());
     }

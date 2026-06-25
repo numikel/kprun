@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use kprun_core::audit::{log_access, AuditRecord};
+use kprun_core::audit::AuditRecord;
 use kprun_core::vault::OpenMode;
 use kprun_core::Result;
 use serde_json::{json, Value};
@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use crate::cli::ExportFormat;
 use crate::ui;
 
-use super::{run_command, unlock_vault};
+use super::{audit_access, run_command, unlock_vault, warn_secret_display};
 
 pub fn execute(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> i32 {
     run_command(|| run(format, stdout, reveal, output))
@@ -22,7 +22,7 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
     let summaries = vault.list_entries();
 
     if reveal {
-        eprintln!("WARNING: secret values are displayed in the terminal");
+        warn_secret_display();
     }
 
     let output_str = match format {
@@ -33,9 +33,9 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
     if reveal {
         let titles: Vec<String> = summaries.iter().map(|e| e.title.clone()).collect();
         let keys: Vec<String> = summaries.iter().flat_map(|e| e.keys.clone()).collect();
-        log_access(
+        audit_access(
             &cfg,
-            &AuditRecord::new(cfg.db_path.clone(), titles, keys, None),
+            AuditRecord::new(cfg.db_path.clone(), titles, keys, None),
         )?;
     }
 
