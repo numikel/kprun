@@ -8,14 +8,10 @@ use serde_json::json;
 
 use crate::ui;
 
+use super::run_command;
+
 pub fn execute(mcp: Option<String>, command: Vec<String>) -> i32 {
-    match run(mcp, command) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(mcp, command))
 }
 
 fn run(mcp: Option<String>, command: Vec<String>) -> Result<()> {

@@ -3,16 +3,10 @@ use kprun_core::Result;
 
 use crate::ui;
 
-use super::unlock_vault;
+use super::{run_command, unlock_vault};
 
 pub fn execute(entry: String) -> i32 {
-    match run(&entry) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(&entry))
 }
 
 fn run(entry: &str) -> Result<()> {

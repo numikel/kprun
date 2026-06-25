@@ -8,16 +8,10 @@ use serde_json::{json, Value};
 use crate::cli::ExportFormat;
 use crate::ui;
 
-use super::unlock_vault;
+use super::{run_command, unlock_vault};
 
 pub fn execute(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> i32 {
-    match run(format, stdout, reveal, output) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(format, stdout, reveal, output))
 }
 
 fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>) -> Result<()> {

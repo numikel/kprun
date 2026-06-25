@@ -14,14 +14,10 @@ use crate::ui;
 
 const MIN_MASTER_LEN: usize = 12;
 
+use super::run_command;
+
 pub fn execute(db: Option<String>, no_store: bool, keyfile: Option<String>) -> i32 {
-    match run(db, no_store, keyfile) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(db, no_store, keyfile))
 }
 
 fn run(db: Option<String>, no_store: bool, keyfile: Option<String>) -> Result<()> {

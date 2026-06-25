@@ -4,16 +4,10 @@ use kprun_core::Result;
 
 use crate::ui;
 
-use super::unlock_vault;
+use super::{run_command, unlock_vault};
 
 pub fn execute(entry: String, pairs: Vec<String>) -> i32 {
-    match run(&entry, &pairs) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(&entry, &pairs))
 }
 
 fn run(entry: &str, pair_args: &[String]) -> Result<()> {

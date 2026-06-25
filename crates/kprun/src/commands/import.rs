@@ -6,17 +6,11 @@ use kprun_core::vault::OpenMode;
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
-use super::unlock_vault;
+use super::{run_command, unlock_vault};
 use crate::ui;
 
 pub fn execute(file: String, merge: bool) -> i32 {
-    match run(&file, merge) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(&file, merge))
 }
 
 #[derive(Debug, Deserialize)]
