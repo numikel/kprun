@@ -129,11 +129,6 @@ pub fn harden_existing(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn unsupported(op: &str) -> KprunError {
-    KprunError::Other(format!("secure_fs: cannot enforce permissions for {op}"))
-}
-
 /// Persist a NamedTempFile to `dst` and enforce owner-only permissions on the result.
 pub fn persist_restricted(tmp: tempfile::NamedTempFile, dst: &Path) -> Result<()> {
     let file = tmp.persist(dst).map_err(|e| KprunError::Io(e.error))?;

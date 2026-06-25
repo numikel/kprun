@@ -48,11 +48,6 @@ impl Vault {
     pub fn database(&self) -> &Database {
         &self.db
     }
-
-    #[expect(dead_code)]
-    pub(crate) fn database_mut(&mut self) -> &mut Database {
-        &mut self.db
-    }
 }
 
 pub fn open_vault(path: &Path, key: keepass::DatabaseKey, mode: OpenMode) -> Result<Vault> {
@@ -192,11 +187,6 @@ impl Vault {
             .map_err(map_save_error)?;
         crate::secure_fs::persist_restricted(tmp, &self.path)?;
         Ok(())
-    }
-
-    pub fn save_with_key(&mut self, key: keepass::DatabaseKey) -> Result<()> {
-        self.require_rw()?;
-        self.save(key)
     }
 }
 
@@ -379,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn save_with_key_persists_without_second_unlock() {
+    fn save_persists_without_second_unlock() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("key.kdbx");
         let ctx = UnlockContext {
@@ -393,7 +383,7 @@ mod tests {
         vault
             .set_attributes("svc", &[("TOKEN".into(), "t1".into())])
             .unwrap();
-        vault.save_with_key(key.clone()).unwrap();
+        vault.save(key.clone()).unwrap();
 
         let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
         let id = vault2.find_entry_by_title("svc").unwrap();

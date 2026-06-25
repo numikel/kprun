@@ -79,7 +79,7 @@ fn run(file: &str, merge: bool) -> Result<()> {
         vault.set_attributes(&entry.title, &entry.pairs)?;
     }
 
-    vault.save_with_key(db_key)?;
+    vault.save(db_key)?;
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
     let mode = if merge {

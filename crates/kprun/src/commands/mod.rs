@@ -58,7 +58,6 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     };
     let master = unlock_with_fallback(&ctx)?;
     let db_key = build_database_key(&ctx, &master)?;
-    let caller_key = build_database_key(&ctx, &master)?;
-    let vault = open_vault(&cfg.db_path, db_key, mode)?;
-    Ok((cfg, ctx, vault, caller_key))
+    let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
+    Ok((cfg, ctx, vault, db_key))
 }

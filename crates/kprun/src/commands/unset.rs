@@ -19,7 +19,7 @@ fn run(entry: &str, keys: &[String]) -> Result<()> {
     ui::maybe_banner();
     let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     vault.unset_attributes(entry, keys)?;
-    vault.save_with_key(db_key)?;
+    vault.save(db_key)?;
     ui::success(&format!(
         "Removed from entry '{entry}': {}",
         keys.join(", ")
