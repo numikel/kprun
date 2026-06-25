@@ -45,7 +45,8 @@ fn run(file: &str, merge: bool) -> Result<()> {
 
     mutate_vault(|vault| {
         if !merge {
-            let imported_titles: HashSet<String> = entries.iter().map(|e| e.title.clone()).collect();
+            let imported_titles: HashSet<String> =
+                entries.iter().map(|e| e.title.clone()).collect();
             for summary in vault.list_entries() {
                 if !imported_titles.contains(&summary.title) {
                     vault.delete_entry(&summary.title)?;
