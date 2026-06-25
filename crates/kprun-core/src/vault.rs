@@ -180,6 +180,7 @@ impl Vault {
 
     pub fn save(&mut self, key: keepass::DatabaseKey) -> Result<()> {
         self.require_rw()?;
+        prepare_for_save(&mut self.db);
         let mut tmp =
             tempfile::NamedTempFile::new_in(self.path.parent().unwrap_or_else(|| Path::new(".")))?;
         self.db
@@ -187,6 +188,12 @@ impl Vault {
             .map_err(map_save_error)?;
         crate::secure_fs::persist_restricted(tmp, &self.path)?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    fn simulate_legacy_kdbx4_open(&mut self) {
+        use keepass::config::DatabaseVersion;
+        self.db.config.version = DatabaseVersion::KDB4(0);
     }
 }
 
@@ -218,8 +225,32 @@ fn map_save_error(e: impl std::fmt::Display) -> KprunError {
     let msg = e.to_string();
     if msg.to_lowercase().contains("lock") {
         KprunError::DatabaseLocked
+    } else if msg == "Unsupported database version" {
+        KprunError::Other(
+            "vault format is read-only (legacy KDBX3/KDBX4.0); upgrade with KeePassXC or re-init"
+                .into(),
+        )
     } else {
         KprunError::Other(msg)
+    }
+}
+
+/// KDBX minor version required by keepass-rs when saving (see keepass `dump_kdbx4`).
+const KDBX4_SAVE_MINOR_VERSION: u16 = 1;
+
+/// Normalize legacy vault headers so keepass-rs can persist changes (KDBX4.1 only).
+fn prepare_for_save(db: &mut Database) {
+    use keepass::config::{DatabaseConfig, DatabaseVersion};
+
+    match db.config.version {
+        DatabaseVersion::KDB4(KDBX4_SAVE_MINOR_VERSION) => {}
+        DatabaseVersion::KDB4(_) => {
+            db.config.version = DatabaseVersion::KDB4(KDBX4_SAVE_MINOR_VERSION);
+        }
+        DatabaseVersion::KDB3(_) => {
+            db.config = DatabaseConfig::default();
+        }
+        _ => {}
     }
 }
 
@@ -389,6 +420,31 @@ mod tests {
         let id = vault2.find_entry_by_title("svc").unwrap();
         let vals = vault2.entry_custom_values(id);
         assert_eq!(vals.get("TOKEN").map(String::as_str), Some("t1"));
+    }
+
+    #[test]
+    fn legacy_kdbx4_minor_zero_persists_after_save() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy.kdbx");
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault.simulate_legacy_kdbx4_open();
+
+        vault
+            .set_attributes("svc", &[("TOKEN".into(), "legacy".into())])
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        assert_eq!(vals.get("TOKEN").map(String::as_str), Some("legacy"));
     }
 
     #[test]
