@@ -61,3 +61,16 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
     Ok((cfg, ctx, vault, db_key))
 }
+
+pub(crate) fn run_command<F>(f: F) -> i32
+where
+    F: FnOnce() -> Result<()>,
+{
+    match f() {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("error: {e}");
+            1
+        }
+    }
+}
