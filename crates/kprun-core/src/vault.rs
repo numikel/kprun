@@ -257,27 +257,11 @@ fn prepare_for_save(db: &mut Database) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::create_test_vault;
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::KprunError;
     use keepass::db::fields;
     use tempfile::tempdir;
-
-    fn create_test_vault(path: &Path, password: &str) -> Result<()> {
-        use keepass::Database;
-        let mut db = Database::new();
-        db.root_mut().add_entry().edit(|e| {
-            e.set_unprotected(fields::TITLE, "github");
-            e.set_unprotected("GITHUB_TOKEN", "ghp_test");
-        });
-        let ctx = UnlockContext {
-            keyfile: None,
-            db_path: PathBuf::from("test.kdbx"),
-        };
-        let key = build_database_key(&ctx, password)?;
-        let mut file = std::fs::File::create(path)?;
-        db.save(&mut file, key)
-            .map_err(|e| KprunError::Other(e.to_string()))
-    }
 
     #[test]
     fn find_entry_by_title_case_insensitive() {
