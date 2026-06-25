@@ -8,3 +8,6 @@ pub mod unlock;
 pub mod vault;
 
 pub use error::{KprunError, Result};
+
+#[cfg(test)]
+mod test_fixtures;

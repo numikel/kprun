@@ -71,39 +71,18 @@ pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<Inject
 #[cfg(test)]
 mod tests {
     use super::{collision_warning_message, resolve_injection};
+    use crate::test_fixtures::create_multi_entry_test_vault;
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::vault::{open_vault, OpenMode};
-    use crate::{KprunError, Result};
     use keepass::db::fields;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use tempfile::tempdir;
-
-    fn create_test_vault(path: &Path, password: &str) -> Result<()> {
-        use keepass::Database;
-        let mut db = Database::new();
-        db.root_mut().add_entry().edit(|e| {
-            e.set_unprotected(fields::TITLE, "openai");
-            e.set_unprotected("OPENAI_API_KEY", "sk-test-secret");
-        });
-        db.root_mut().add_entry().edit(|e| {
-            e.set_unprotected(fields::TITLE, "postgres");
-            e.set_unprotected("DATABASE_URL", "postgres://user:pass@localhost/db");
-        });
-        let ctx = UnlockContext {
-            keyfile: None,
-            db_path: PathBuf::from("test.kdbx"),
-        };
-        let key = build_database_key(&ctx, password)?;
-        let mut file = std::fs::File::create(path)?;
-        db.save(&mut file, key)
-            .map_err(|e| KprunError::Other(e.to_string()))
-    }
 
     #[test]
     fn merges_multiple_entries() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
-        create_test_vault(&db_path, "pass").unwrap();
+        create_multi_entry_test_vault(&db_path, "pass").unwrap();
         let ctx = UnlockContext {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),

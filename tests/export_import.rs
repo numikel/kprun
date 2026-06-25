@@ -1,39 +1,21 @@
+mod common;
+
 use std::path::Path;
 
-use assert_cmd::Command;
 use kprun_core::unlock::{build_database_key, UnlockContext};
-use kprun_core::vault::{create_vault, open_vault, OpenMode};
+use kprun_core::vault::create_vault;
 use serde_json::Value;
 
+use common::{create_vault_with_entries, kprun_cmd, test_env};
+
 fn setup_multi_entry_vault(db: &Path) {
-    let ctx = UnlockContext {
-        keyfile: None,
-        db_path: db.to_path_buf(),
-    };
-    let key = build_database_key(&ctx, "pass").unwrap();
-    create_vault(db, key.clone(), "kprun").unwrap();
-    let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
-    vault
-        .set_attributes("github", &[("GITHUB_TOKEN".into(), "ghp_secret".into())])
-        .unwrap();
-    vault
-        .set_attributes(
-            "postgres",
-            &[("DATABASE_URL".into(), "postgres://local".into())],
-        )
-        .unwrap();
-    vault.save(key).unwrap();
-}
-
-fn kprun() -> Command {
-    Command::cargo_bin("kprun").unwrap()
-}
-
-fn env_for(db: &Path) -> [(&str, &str); 2] {
-    [
-        ("KPRUN_DB", db.to_str().unwrap()),
-        ("KPRUN_TEST_MASTER", "pass"),
-    ]
+    create_vault_with_entries(
+        db,
+        &[
+            ("github", &[("GITHUB_TOKEN", "ghp_secret")]),
+            ("postgres", &[("DATABASE_URL", "postgres://local")]),
+        ],
+    );
 }
 
 #[test]
@@ -42,8 +24,8 @@ fn export_json_hides_values_by_default() {
     let db = dir.path().join("secrets.kdbx");
     setup_multi_entry_vault(&db);
 
-    let output = kprun()
-        .envs(env_for(&db))
+    let output = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--stdout"])
         .assert()
         .success()
@@ -72,8 +54,8 @@ fn export_json_reveal_includes_values_and_warns() {
     let db = dir.path().join("secrets.kdbx");
     setup_multi_entry_vault(&db);
 
-    let assert = kprun()
-        .envs(env_for(&db))
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--stdout", "--reveal"])
         .assert()
         .success()
@@ -98,8 +80,8 @@ fn export_dotenv_formats_blocks() {
     let db = dir.path().join("secrets.kdbx");
     setup_multi_entry_vault(&db);
 
-    let hidden = kprun()
-        .envs(env_for(&db))
+    let hidden = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--format", "dotenv", "--stdout"])
         .assert()
         .success()
@@ -111,8 +93,8 @@ fn export_dotenv_formats_blocks() {
     assert!(hidden_text.contains("# GITHUB_TOKEN"));
     assert!(!hidden_text.contains("ghp_secret"));
 
-    let revealed = kprun()
-        .envs(env_for(&db))
+    let revealed = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
@@ -143,14 +125,14 @@ fn import_json_merge_preserves_unmentioned_entries() {
     )
     .unwrap();
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["import", import_file.to_str().unwrap(), "--merge"])
         .assert()
         .success();
 
-    let list = kprun()
-        .envs(env_for(&db))
+    let list = kprun_cmd()
+        .envs(test_env(&db))
         .args(["list", "--json"])
         .assert()
         .success()
@@ -168,8 +150,8 @@ fn import_json_merge_preserves_unmentioned_entries() {
     assert!(titles.contains(&"postgres"));
     assert!(titles.contains(&"stripe"));
 
-    let reveal = kprun()
-        .envs(env_for(&db))
+    let reveal = kprun_cmd()
+        .envs(test_env(&db))
         .args(["get", "github", "--reveal"])
         .assert()
         .success()
@@ -197,14 +179,14 @@ fn import_json_without_merge_removes_unmentioned_entries() {
     )
     .unwrap();
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["import", import_file.to_str().unwrap()])
         .assert()
         .success();
 
-    let list = kprun()
-        .envs(env_for(&db))
+    let list = kprun_cmd()
+        .envs(test_env(&db))
         .args(["list", "--json"])
         .assert()
         .success()
@@ -228,8 +210,8 @@ fn import_dotenv_hidden_without_merge_rejects_and_preserves_vault() {
     let import_file = dir.path().join("hidden.env");
     setup_multi_entry_vault(&db);
 
-    let exported = kprun()
-        .envs(env_for(&db))
+    let exported = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--format", "dotenv", "--stdout"])
         .assert()
         .success()
@@ -238,8 +220,8 @@ fn import_dotenv_hidden_without_merge_rejects_and_preserves_vault() {
         .clone();
     std::fs::write(&import_file, &exported).unwrap();
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["import", import_file.to_str().unwrap()])
         .assert()
         .failure()
@@ -247,8 +229,8 @@ fn import_dotenv_hidden_without_merge_rejects_and_preserves_vault() {
             "structure-only dotenv export cannot be imported",
         ));
 
-    let list = kprun()
-        .envs(env_for(&db))
+    let list = kprun_cmd()
+        .envs(test_env(&db))
         .args(["list", "--json"])
         .assert()
         .success()
@@ -275,15 +257,15 @@ fn import_dotenv_roundtrip() {
     let import_db = dir.path().join("imported.kdbx");
     setup_multi_entry_vault(&db);
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
         .stdout(predicates::str::contains("GITHUB_TOKEN=\"ghp_secret\""));
 
-    let exported = kprun()
-        .envs(env_for(&db))
+    let exported = kprun_cmd()
+        .envs(test_env(&db))
         .args(["export", "--format", "dotenv", "--stdout", "--reveal"])
         .assert()
         .success()
@@ -299,16 +281,14 @@ fn import_dotenv_roundtrip() {
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&import_db, key, "kprun").unwrap();
 
-    kprun()
-        .env("KPRUN_DB", import_db.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
+    kprun_cmd()
+        .envs(test_env(&import_db))
         .args(["import", export_file.to_str().unwrap(), "--merge"])
         .assert()
         .success();
 
-    kprun()
-        .env("KPRUN_DB", import_db.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
+    kprun_cmd()
+        .envs(test_env(&import_db))
         .args(["get", "github", "--reveal"])
         .assert()
         .success()
@@ -330,14 +310,14 @@ fn import_dotenv_trims_value_whitespace() {
 
     std::fs::write(&import_file, "# trimtest\nTRIM_KEY= value \n").unwrap();
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["import", import_file.to_str().unwrap(), "--merge"])
         .assert()
         .success();
 
-    kprun()
-        .envs(env_for(&db))
+    kprun_cmd()
+        .envs(test_env(&db))
         .args(["get", "trimtest", "--reveal"])
         .assert()
         .success()
