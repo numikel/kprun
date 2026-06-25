@@ -19,7 +19,7 @@ fn run(entry: &str) -> Result<()> {
     ui::maybe_banner();
     let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     vault.delete_entry(entry)?;
-    vault.save_with_key(db_key)?;
+    vault.save(db_key)?;
     ui::success(&format!("Deleted entry '{entry}'"));
     Ok(())
 }

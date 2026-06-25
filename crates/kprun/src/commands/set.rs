@@ -23,7 +23,7 @@ fn run(entry: &str, pair_args: &[String]) -> Result<()> {
     let key_names: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
     let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     vault.set_attributes(entry, &pairs)?;
-    vault.save_with_key(db_key)?;
+    vault.save(db_key)?;
     ui::success(&format!(
         "Updated entry '{entry}': {}",
         key_names.join(", ")
