@@ -1,29 +1,15 @@
+mod common;
+
 use std::path::Path;
 
-use assert_cmd::Command;
 use kprun_core::unlock::{build_database_key, UnlockContext};
-use kprun_core::vault::{create_vault, open_vault, OpenMode};
+use kprun_core::vault::create_vault;
 use predicates::prelude::PredicateBooleanExt;
 
-fn setup_openai_vault(db: &Path) {
-    let ctx = UnlockContext {
-        keyfile: None,
-        db_path: db.to_path_buf(),
-    };
-    let key = build_database_key(&ctx, "pass").unwrap();
-    create_vault(db, key.clone(), "kprun").unwrap();
-    let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
-    vault
-        .set_attributes(
-            "openai",
-            &[("OPENAI_API_KEY".into(), "sk-secret-value".into())],
-        )
-        .unwrap();
-    vault.save(key).unwrap();
-}
+use common::{create_vault_with_entries, kprun_cmd, test_env};
 
-fn kprun() -> Command {
-    Command::cargo_bin("kprun").unwrap()
+fn setup_openai_vault(db: &Path) {
+    create_vault_with_entries(db, &[("openai", &[("OPENAI_API_KEY", "sk-secret-value")])]);
 }
 
 #[test]
@@ -32,9 +18,8 @@ fn list_shows_entry_keys_not_values() {
     let db = dir.path().join("secrets.kdbx");
     setup_openai_vault(&db);
 
-    let output = kprun()
-        .env("KPRUN_DB", db.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
+    let output = kprun_cmd()
+        .envs(test_env(&db))
         .args(["list"])
         .assert()
         .success()
@@ -56,10 +41,9 @@ fn get_reveal_audits_access() {
     let log = dir.path().join("access.log");
     setup_openai_vault(&db);
 
-    kprun()
-        .env("KPRUN_DB", db.to_str().unwrap())
+    kprun_cmd()
+        .envs(test_env(&db))
         .env("KPRUN_LOG", log.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
         .args(["get", "openai", "--reveal"])
         .assert()
         .success()
@@ -81,10 +65,9 @@ fn get_keys_audits_access() {
     let log = dir.path().join("access.log");
     setup_openai_vault(&db);
 
-    kprun()
-        .env("KPRUN_DB", db.to_str().unwrap())
+    kprun_cmd()
+        .envs(test_env(&db))
         .env("KPRUN_LOG", log.to_str().unwrap())
-        .env("KPRUN_TEST_MASTER", "pass")
         .args(["get", "openai", "--keys"])
         .assert()
         .success();
@@ -105,18 +88,15 @@ fn set_unset_delete_roundtrip() {
     let key = build_database_key(&ctx, "pass").unwrap();
     create_vault(&db, key, "kprun").unwrap();
 
-    let env = [
-        ("KPRUN_DB", db.to_str().unwrap()),
-        ("KPRUN_TEST_MASTER", "pass"),
-    ];
+    let env = test_env(&db);
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["set", "demo", "DEMO_KEY=demo-val", "OTHER=1"])
         .assert()
         .success();
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["get", "demo", "--keys"])
         .assert()
@@ -124,13 +104,13 @@ fn set_unset_delete_roundtrip() {
         .stdout(predicates::str::contains("DEMO_KEY"))
         .stdout(predicates::str::contains("OTHER"));
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["unset", "demo", "OTHER"])
         .assert()
         .success();
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["get", "demo", "--keys"])
         .assert()
@@ -138,13 +118,13 @@ fn set_unset_delete_roundtrip() {
         .stdout(predicates::str::contains("DEMO_KEY"))
         .stdout(predicates::str::contains("OTHER").not());
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["delete", "demo"])
         .assert()
         .success();
 
-    kprun()
+    kprun_cmd()
         .envs(env)
         .args(["list"])
         .assert()
