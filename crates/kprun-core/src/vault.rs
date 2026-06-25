@@ -48,11 +48,6 @@ impl Vault {
     pub fn database(&self) -> &Database {
         &self.db
     }
-
-    #[expect(dead_code)]
-    pub(crate) fn database_mut(&mut self) -> &mut Database {
-        &mut self.db
-    }
 }
 
 pub fn open_vault(path: &Path, key: keepass::DatabaseKey, mode: OpenMode) -> Result<Vault> {
