@@ -1,9 +1,8 @@
-use kprun_core::vault::OpenMode;
 use kprun_core::Result;
 
 use crate::ui;
 
-use super::{run_command, unlock_vault};
+use super::{mutate_vault, run_command};
 
 pub fn execute(entry: String) -> i32 {
     run_command(|| run(&entry))
@@ -11,9 +10,10 @@ pub fn execute(entry: String) -> i32 {
 
 fn run(entry: &str) -> Result<()> {
     ui::maybe_banner();
-    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
-    vault.delete_entry(entry)?;
-    vault.save(db_key)?;
+    mutate_vault(|vault| {
+        vault.delete_entry(entry)?;
+        Ok(())
+    })?;
     ui::success(&format!("Deleted entry '{entry}'"));
     Ok(())
 }

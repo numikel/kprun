@@ -74,3 +74,13 @@ where
         }
     }
 }
+
+fn mutate_vault<F>(f: F) -> Result<()>
+where
+    F: FnOnce(&mut Vault) -> Result<()>,
+{
+    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
+    f(&mut vault)?;
+    vault.save(db_key)?;
+    Ok(())
+}
