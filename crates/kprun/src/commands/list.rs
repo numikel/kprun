@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::ui;
 
-use super::unlock_vault;
+use super::{run_command, unlock_vault};
 
 #[derive(Serialize)]
 struct ListEntry<'a> {
@@ -13,13 +13,7 @@ struct ListEntry<'a> {
 }
 
 pub fn execute(json: bool) -> i32 {
-    match run(json) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(json))
 }
 
 fn run(json: bool) -> Result<()> {

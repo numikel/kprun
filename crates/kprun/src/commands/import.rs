@@ -2,21 +2,14 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use kprun_core::vault::OpenMode;
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
-use super::unlock_vault;
+use super::{mutate_vault, run_command};
 use crate::ui;
 
 pub fn execute(file: String, merge: bool) -> i32 {
-    match run(&file, merge) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("error: {e}");
-            1
-        }
-    }
+    run_command(|| run(&file, merge))
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,36 +43,36 @@ fn run(file: &str, merge: bool) -> Result<()> {
         ));
     }
 
-    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
-
-    if !merge {
-        let imported_titles: HashSet<String> = entries.iter().map(|e| e.title.clone()).collect();
-        for summary in vault.list_entries() {
-            if !imported_titles.contains(&summary.title) {
-                vault.delete_entry(&summary.title)?;
-            }
-        }
-    }
-
-    for entry in &entries {
+    mutate_vault(|vault| {
         if !merge {
-            if let Ok(id) = vault.find_entry_by_title(&entry.title) {
-                let existing = vault.entry_custom_keys(id);
-                let imported_keys: HashSet<&str> =
-                    entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
-                let to_remove: Vec<String> = existing
-                    .into_iter()
-                    .filter(|k| !imported_keys.contains(k.as_str()))
-                    .collect();
-                if !to_remove.is_empty() {
-                    vault.unset_attributes(&entry.title, &to_remove)?;
+            let imported_titles: HashSet<String> =
+                entries.iter().map(|e| e.title.clone()).collect();
+            for summary in vault.list_entries() {
+                if !imported_titles.contains(&summary.title) {
+                    vault.delete_entry(&summary.title)?;
                 }
             }
         }
-        vault.set_attributes(&entry.title, &entry.pairs)?;
-    }
 
-    vault.save(db_key)?;
+        for entry in &entries {
+            if !merge {
+                if let Ok(id) = vault.find_entry_by_title(&entry.title) {
+                    let existing = vault.entry_custom_keys(id);
+                    let imported_keys: HashSet<&str> =
+                        entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
+                    let to_remove: Vec<String> = existing
+                        .into_iter()
+                        .filter(|k| !imported_keys.contains(k.as_str()))
+                        .collect();
+                    if !to_remove.is_empty() {
+                        vault.unset_attributes(&entry.title, &to_remove)?;
+                    }
+                }
+            }
+            vault.set_attributes(&entry.title, &entry.pairs)?;
+        }
+        Ok(())
+    })?;
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
     let mode = if merge {

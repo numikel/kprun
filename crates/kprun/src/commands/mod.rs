@@ -1,3 +1,4 @@
+use kprun_core::audit::{log_access, AuditRecord};
 use kprun_core::config::Config;
 use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
 use kprun_core::vault::{open_vault, DatabaseKey, OpenMode, Vault};
@@ -60,4 +61,35 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     let db_key = build_database_key(&ctx, &master)?;
     let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
     Ok((cfg, ctx, vault, db_key))
+}
+
+pub(crate) fn run_command<F>(f: F) -> i32
+where
+    F: FnOnce() -> Result<()>,
+{
+    match f() {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("error: {e}");
+            1
+        }
+    }
+}
+
+fn mutate_vault<F>(f: F) -> Result<()>
+where
+    F: FnOnce(&mut Vault) -> Result<()>,
+{
+    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
+    f(&mut vault)?;
+    vault.save(db_key)?;
+    Ok(())
+}
+
+fn warn_secret_display() {
+    eprintln!("WARNING: secret values are displayed in the terminal");
+}
+
+fn audit_access(cfg: &Config, record: AuditRecord) -> Result<()> {
+    log_access(cfg, &record)
 }
