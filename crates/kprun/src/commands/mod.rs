@@ -51,7 +51,7 @@ pub fn dispatch(command: Commands) {
     }
 }
 
-fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, DatabaseKey)> {
+fn unlock_vault(mode: OpenMode) -> Result<(Config, Vault, DatabaseKey)> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
@@ -60,7 +60,12 @@ fn unlock_vault(mode: OpenMode) -> Result<(Config, UnlockContext, Vault, Databas
     let master = unlock_with_fallback(&ctx)?;
     let db_key = build_database_key(&ctx, &master)?;
     let vault = open_vault(&cfg.db_path, db_key.clone(), mode)?;
-    Ok((cfg, ctx, vault, db_key))
+    Ok((cfg, vault, db_key))
+}
+
+fn unlock_vault_readonly() -> Result<(Config, Vault)> {
+    let (cfg, vault, _key) = unlock_vault(OpenMode::ReadOnly)?;
+    Ok((cfg, vault))
 }
 
 pub(crate) fn run_command<F>(f: F) -> i32
@@ -80,7 +85,7 @@ fn mutate_vault<F>(f: F) -> Result<()>
 where
     F: FnOnce(&mut Vault) -> Result<()>,
 {
-    let (_cfg, _ctx, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
+    let (_cfg, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     f(&mut vault)?;
     vault.save(db_key)?;
     Ok(())
