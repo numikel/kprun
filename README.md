@@ -300,7 +300,9 @@ kprun/
 ├── .github/workflows/
 │   ├── ci.yml               # fmt, clippy, test matrix
 │   └── release.yml          # cross-build + checksums on tag v*
-└── docs/superpowers/        # design spec and implementation plan
+└── docs/
+    ├── kprun.gif            # demo animation
+    └── changelogs/          # per-version release notes
 ```
 
 ## Development
@@ -348,26 +350,20 @@ cargo test --all
 
 ## Releases
 
-kprun uses a two-step release process:
+Releases are published when a maintainer tags `vX.Y.Z` and pushes:
 
-1. **Prepare (local)** — In Cursor, run `/prepare-release X.Y.Z`. The agent writes `docs/changelogs/vX.Y.Z.md`, updates [CHANGELOG.md](CHANGELOG.md), bumps the workspace version, and commits `chore(release): prepare vX.Y.Z`.
-2. **Publish (manual)** — Tag and push:
+```bash
+git tag vX.Y.Z
+git push origin main --tags
+```
 
-   ```bash
-   git tag vX.Y.Z
-   git push origin main --tags
-   ```
-
-CI validates the changelog file and version match, builds release binaries for five targets, and publishes a GitHub Release whose body comes from the per-version changelog file.
-
-See [docs/github-setup.md](docs/github-setup.md) for repository settings (branch protection, Dependabot, first release).
+CI validates the changelog file and version match, builds release binaries for five targets, and publishes a GitHub Release whose body comes from [docs/changelogs/vX.Y.Z.md](docs/changelogs/).
 
 ## Contributing
 
 1. Fork the repository.
 2. Create a feature branch (`git checkout -b feat/my-change`).
 3. Commit using **Conventional Commits 1.0.0** (e.g. `feat(cli): add example command`, `fix(core): handle locked db`).
-3.5. For release preparation, use `/prepare-release X.Y.Z` (maintainers only).
 4. Add or update tests for behavior changes.
 5. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all`.
 6. Open a pull request against `main`.

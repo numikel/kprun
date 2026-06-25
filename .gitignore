@@ -6,9 +6,8 @@ docs/*
 !docs/kprun.gif
 !docs/changelogs/
 !docs/changelogs/**
-!docs/github-setup.md
-!docs/superpowers/
-!docs/superpowers/**
+.claude/
+.cursor/
 .docs/
 .ai/
 .worktrees/
