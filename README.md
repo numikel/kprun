@@ -9,7 +9,7 @@
 
 **Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
 
-[Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md) · [Install](#installation) · [Quick start](#quick-start) · [MCP integration](#mcp-integration) · [Security model](#security-model)
+[Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md) · [Install](#installation) · [Quick start](#quick-start) · [Coding agents & OpenRouter](#coding-agents-and-openrouter) · [MCP integration](#mcp-integration) · [Security model](#security-model)
 
 ---
 
@@ -20,6 +20,7 @@ kprun stores API keys and tokens in a KeePass database on your machine. It unloc
 Typical uses:
 
 - Run MCP servers (`npx …`) without pasting tokens into client config files
+- Launch coding agents (Claude Code, Hermes, Junie, AGY, …) with OpenRouter env vars injected for one session only
 - Launch dev tools with scoped secrets (`kprun run openai -- python app.py`)
 - Manage a dedicated **dev-secrets** vault separate from your personal password manager
 
@@ -150,6 +151,96 @@ kprun init --db /path/to/existing.kdbx
 ```
 
 Verifies unlock and optionally stores the master password in the OS keychain. Does **not** recreate the database.
+
+## Coding agents and OpenRouter
+
+Many terminal coding agents read API keys and provider URLs from **environment variables**. Instead of exporting them in `~/.bashrc` or `~/.zshrc` (where every process inherits them), store the OpenRouter profile in your vault and launch the agent through `kprun run`.
+
+The `--` separator is required — it marks where vault entry names end and the child command begins:
+
+```text
+kprun run <entry> -- <agent-command> [args...]
+```
+
+### One-time vault setup (Claude Code / OpenRouter)
+
+Per [OpenRouter's Claude Code guide](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration), Claude Code expects these variables. Store them under one vault entry (title = `openrouter` here; any name works):
+
+```bash
+kprun set openrouter \
+  OPENROUTER_API_KEY=sk-or-... \
+  ANTHROPIC_BASE_URL=https://openrouter.ai/api \
+  ANTHROPIC_AUTH_TOKEN=sk-or-... \
+  ANTHROPIC_API_KEY=
+```
+
+KeePass fields are literal values — set `ANTHROPIC_AUTH_TOKEN` to the same key as `OPENROUTER_API_KEY`. Set `ANTHROPIC_API_KEY` to an **empty** string to avoid auth conflicts with a cached Anthropic login (run `/logout` inside Claude Code once if you previously signed in with Anthropic).
+
+Optional model overrides (also from the OpenRouter docs):
+
+```bash
+kprun set openrouter \
+  ANTHROPIC_DEFAULT_SONNET_MODEL='~anthropic/claude-sonnet-latest' \
+  ANTHROPIC_DEFAULT_OPUS_MODEL='~anthropic/claude-opus-latest'
+```
+
+### Launch examples
+
+**Claude Code** — secrets stay in the child process only; your shell profile stays clean:
+
+```bash
+kprun run openrouter -- claude
+```
+
+Windows PowerShell:
+
+```powershell
+kprun run openrouter -- claude
+```
+
+Verify inside Claude Code with `/status` (auth token: `ANTHROPIC_AUTH_TOKEN`, base URL: `https://openrouter.ai/api`).
+
+**Antigravity CLI (`agy`)** — the CLI authenticates via Google by default. If you use OpenRouter through a plugin, extension, or any workflow that reads `OPENROUTER_API_KEY` from the environment, inject it the same way:
+
+```bash
+kprun set openrouter OPENROUTER_API_KEY=sk-or-...
+kprun run openrouter -- agy
+```
+
+**Hermes Agent** — Nous Research's terminal agent reads `OPENROUTER_API_KEY` from the environment (alternative to `~/.hermes/.env`). Model and provider stay in `~/.hermes/config.yaml`; see [OpenRouter's Hermes guide](https://openrouter.ai/docs/cookbook/coding-agents/hermes-integration):
+
+```bash
+kprun set openrouter OPENROUTER_API_KEY=sk-or-...
+kprun run openrouter -- hermes
+# or: kprun run openrouter -- hermes --tui
+```
+
+**Junie CLI** — JetBrains' terminal agent uses OpenRouter as a native BYOK provider via `JUNIE_OPENROUTER_API_KEY`; see [OpenRouter's Junie guide](https://openrouter.ai/docs/cookbook/coding-agents/junie):
+
+```bash
+kprun set openrouter \
+  OPENROUTER_API_KEY=sk-or-... \
+  JUNIE_OPENROUTER_API_KEY=sk-or-...
+kprun run openrouter -- junie
+```
+
+Headless CI example (same injected env, no shell profile):
+
+```bash
+kprun run openrouter -- junie "Review and fix any code quality issues in the latest commit"
+```
+
+**GitHub Copilot CLI** — Copilot fixes the model at startup and speaks OpenAI-compatible APIs; env injection alone is awkward for live model switching. For Copilot CLI (and Codex CLI with OpenRouter), the author recommends **[copilot-cli-custom-proxy](https://github.com/numikel/copilot-cli-custom-proxy)** instead: a local tray proxy that swaps models on the fly, injects the API key from memory, and launches Copilot/Codex with the right env — without putting keys in your shell profile.
+
+| Agent | kprun fit | Notes |
+|-------|-----------|-------|
+| Claude Code | ✅ Best fit | Env-based OpenRouter setup; see [OpenRouter docs](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration) |
+| Hermes Agent | ✅ Best fit | `OPENROUTER_API_KEY`; config in `~/.hermes/config.yaml`; see [OpenRouter docs](https://openrouter.ai/docs/cookbook/coding-agents/hermes-integration) |
+| Junie CLI | ✅ Best fit | `JUNIE_OPENROUTER_API_KEY`; see [OpenRouter docs](https://openrouter.ai/docs/cookbook/coding-agents/junie) |
+| Antigravity CLI (`agy`) | ⚠️ Partial | Default auth is Google; use kprun when the workflow reads env vars |
+| Copilot CLI / Codex CLI | ❌ Use proxy | Prefer [copilot-cli-custom-proxy](https://github.com/numikel/copilot-cli-custom-proxy) |
+
+One OpenRouter key can power every tool above; generate it at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
 
 ## Configuration
 
