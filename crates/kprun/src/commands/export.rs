@@ -18,7 +18,7 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
     if !stdout {
         ui::maybe_banner();
     }
-    let (cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
+    let (cfg, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let summaries = vault.list_entries();
 
     if reveal {

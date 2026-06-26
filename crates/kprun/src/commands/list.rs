@@ -20,7 +20,7 @@ fn run(json: bool) -> Result<()> {
     if !json {
         ui::maybe_banner();
     }
-    let (_cfg, _ctx, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
+    let (_cfg, vault, _db_key) = unlock_vault(OpenMode::ReadOnly)?;
     let entries = vault.list_entries();
 
     if json {

@@ -1,14 +1,11 @@
 use kprun_core::config::Config;
-use kprun_core::unlock::{
-    build_database_key, keystore_has_master, unlock_with_fallback, UnlockContext,
-};
-use kprun_core::vault::{open_vault, OpenMode};
+use kprun_core::unlock::keystore_has_master;
 use kprun_core::Result;
 use serde_json::json;
 
 use crate::ui;
 
-use super::run_command;
+use super::{run_command, unlock_vault_readonly};
 
 pub fn execute(mcp: Option<String>, command: Vec<String>) -> i32 {
     run_command(|| run(mcp, command))
@@ -33,10 +30,6 @@ fn run(mcp: Option<String>, command: Vec<String>) -> Result<()> {
 fn print_diagnostics() -> Result<()> {
     ui::maybe_banner();
     let cfg = Config::from_env();
-    let ctx = UnlockContext {
-        keyfile: cfg.keyfile.clone(),
-        db_path: cfg.db_path.clone(),
-    };
 
     if cfg.db_path.exists() {
         println!("vault: ok ({})", cfg.db_path.display());
@@ -52,9 +45,7 @@ fn print_diagnostics() -> Result<()> {
         ));
     }
 
-    let master = unlock_with_fallback(&ctx)?;
-    let db_key = build_database_key(&ctx, &master)?;
-    let _vault = open_vault(&cfg.db_path, db_key, OpenMode::ReadOnly)?;
+    unlock_vault_readonly()?;
     println!("unlock: ok");
 
     let keystore = if keystore_has_master(&cfg.db_path) {

@@ -1,11 +1,10 @@
 use kprun_core::audit::{log_access, AuditRecord};
-use kprun_core::config::Config;
 use kprun_core::inject::resolve_injection;
-use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
-use kprun_core::vault::{open_vault, OpenMode};
 use kprun_core::Result;
 
 use crate::spawn::run_child;
+
+use super::unlock_vault_readonly;
 
 pub fn execute(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> i32 {
     match run_inner(entries, command, clean_env) {
@@ -18,16 +17,7 @@ pub fn execute(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> i
 }
 
 fn run_inner(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> Result<i32> {
-    let cfg = Config::from_env();
-    let ctx = UnlockContext {
-        keyfile: cfg.keyfile.clone(),
-        db_path: cfg.db_path.clone(),
-    };
-
-    let master = unlock_with_fallback(&ctx)?;
-    let db_key = build_database_key(&ctx, &master)?;
-    let vault = open_vault(&cfg.db_path, db_key, OpenMode::ReadOnly)?;
-
+    let (cfg, vault) = unlock_vault_readonly()?;
     let injection = resolve_injection(&vault, &entries)?;
 
     if injection.injected_keys.is_empty() {
