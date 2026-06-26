@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
@@ -14,11 +14,11 @@ pub fn execute(file: String, merge: bool) -> i32 {
 
 #[derive(Debug, Deserialize)]
 struct ImportFile {
-    entries: Vec<ImportEntry>,
+    entries: Vec<JsonImportEntry>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ImportEntry {
+struct JsonImportEntry {
     title: String,
     keys: serde_json::Value,
 }
@@ -27,7 +27,7 @@ fn run(file: &str, merge: bool) -> Result<()> {
     ui::maybe_banner();
     let path = Path::new(file);
     let content = fs::read_to_string(path)?;
-    let entries = if path
+    let parsed = if path
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -37,50 +37,33 @@ fn run(file: &str, merge: bool) -> Result<()> {
         parse_dotenv_import(&content)?
     };
 
-    if !merge && entries.is_empty() {
-        return Err(KprunError::Other(
-            "import file contains no entries; refusing to replace vault".into(),
-        ));
-    }
+    let entries: Vec<ImportEntry> = parsed
+        .into_iter()
+        .map(|e| ImportEntry {
+            title: e.title,
+            pairs: e.pairs,
+        })
+        .collect();
+
+    let mode = if merge {
+        ImportMode::Merge
+    } else {
+        ImportMode::Replace
+    };
 
     mutate_vault(|vault| {
-        if !merge {
-            let imported_titles: HashSet<String> =
-                entries.iter().map(|e| e.title.clone()).collect();
-            for summary in vault.list_entries() {
-                if !imported_titles.contains(&summary.title) {
-                    vault.delete_entry(&summary.title)?;
-                }
-            }
-        }
-
-        for entry in &entries {
-            if !merge {
-                if let Ok(id) = vault.find_entry_by_title(&entry.title) {
-                    let existing = vault.entry_custom_keys(id);
-                    let imported_keys: HashSet<&str> =
-                        entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
-                    let to_remove: Vec<String> = existing
-                        .into_iter()
-                        .filter(|k| !imported_keys.contains(k.as_str()))
-                        .collect();
-                    if !to_remove.is_empty() {
-                        vault.unset_attributes(&entry.title, &to_remove)?;
-                    }
-                }
-            }
-            vault.set_attributes(&entry.title, &entry.pairs)?;
-        }
+        apply_import(vault, &entries, mode)?;
         Ok(())
     })?;
+
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
-    let mode = if merge {
+    let mode_label = if merge {
         "merged into"
     } else {
         "imported into"
     };
-    ui::success(&format!("{count} {noun} {mode} vault"));
+    ui::success(&format!("{count} {noun} {mode_label} vault"));
     Ok(())
 }
 
