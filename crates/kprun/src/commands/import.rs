@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
@@ -14,11 +14,11 @@ pub fn execute(file: String, merge: bool) -> i32 {
 
 #[derive(Debug, Deserialize)]
 struct ImportFile {
-    entries: Vec<ImportEntry>,
+    entries: Vec<JsonImportEntry>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ImportEntry {
+struct JsonImportEntry {
     title: String,
     keys: serde_json::Value,
 }
@@ -27,7 +27,7 @@ fn run(file: &str, merge: bool) -> Result<()> {
     ui::maybe_banner();
     let path = Path::new(file);
     let content = fs::read_to_string(path)?;
-    let entries = if path
+    let parsed = if path
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -37,50 +37,33 @@ fn run(file: &str, merge: bool) -> Result<()> {
         parse_dotenv_import(&content)?
     };
 
-    if !merge && entries.is_empty() {
-        return Err(KprunError::Other(
-            "import file contains no entries; refusing to replace vault".into(),
-        ));
-    }
+    let entries: Vec<ImportEntry> = parsed
+        .into_iter()
+        .map(|e| ImportEntry {
+            title: e.title,
+            pairs: e.pairs,
+        })
+        .collect();
+
+    let mode = if merge {
+        ImportMode::Merge
+    } else {
+        ImportMode::Replace
+    };
 
     mutate_vault(|vault| {
-        if !merge {
-            let imported_titles: HashSet<String> =
-                entries.iter().map(|e| e.title.clone()).collect();
-            for summary in vault.list_entries() {
-                if !imported_titles.contains(&summary.title) {
-                    vault.delete_entry(&summary.title)?;
-                }
-            }
-        }
-
-        for entry in &entries {
-            if !merge {
-                if let Ok(id) = vault.find_entry_by_title(&entry.title) {
-                    let existing = vault.entry_custom_keys(id);
-                    let imported_keys: HashSet<&str> =
-                        entry.pairs.iter().map(|(k, _)| k.as_str()).collect();
-                    let to_remove: Vec<String> = existing
-                        .into_iter()
-                        .filter(|k| !imported_keys.contains(k.as_str()))
-                        .collect();
-                    if !to_remove.is_empty() {
-                        vault.unset_attributes(&entry.title, &to_remove)?;
-                    }
-                }
-            }
-            vault.set_attributes(&entry.title, &entry.pairs)?;
-        }
+        apply_import(vault, &entries, mode)?;
         Ok(())
     })?;
+
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
-    let mode = if merge {
+    let mode_label = if merge {
         "merged into"
     } else {
         "imported into"
     };
-    ui::success(&format!("{count} {noun} {mode} vault"));
+    ui::success(&format!("{count} {noun} {mode_label} vault"));
     Ok(())
 }
 
@@ -122,50 +105,75 @@ fn parse_json_import(content: &str) -> Result<Vec<ParsedEntry>> {
         .collect()
 }
 
-fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
-    let mut entries = Vec::new();
-    let mut current_title: Option<String> = None;
-    let mut pairs: Vec<(String, String)> = Vec::new();
-    let mut saw_structure = false;
-    let mut saw_key_value = false;
+enum DotenvParserState {
+    Idle,
+    InEntry {
+        title: String,
+        pairs: Vec<(String, String)>,
+    },
+}
 
-    let flush = |title: &mut Option<String>,
-                 pairs: &mut Vec<(String, String)>,
-                 entries: &mut Vec<ParsedEntry>| {
-        if let Some(t) = title.take() {
+struct DotenvParser {
+    state: DotenvParserState,
+    entries: Vec<ParsedEntry>,
+    saw_structure: bool,
+    saw_key_value: bool,
+}
+
+impl DotenvParser {
+    fn new() -> Self {
+        Self {
+            state: DotenvParserState::Idle,
+            entries: Vec::new(),
+            saw_structure: false,
+            saw_key_value: false,
+        }
+    }
+
+    fn flush_entry(&mut self) {
+        if let DotenvParserState::InEntry { title, pairs } =
+            std::mem::replace(&mut self.state, DotenvParserState::Idle)
+        {
             if !pairs.is_empty() {
-                entries.push(ParsedEntry {
-                    title: t,
-                    pairs: std::mem::take(pairs),
-                });
+                self.entries.push(ParsedEntry { title, pairs });
             }
         }
-    };
+    }
 
-    for line in content.lines() {
+    fn feed(&mut self, line: &str) -> Result<()> {
         let line = line.trim();
         if line.is_empty() {
-            flush(&mut current_title, &mut pairs, &mut entries);
-            continue;
+            self.flush_entry();
+            return Ok(());
         }
 
         if let Some(rest) = line.strip_prefix('#') {
             let label = rest.trim();
             if label.is_empty() {
-                continue;
+                return Ok(());
             }
-            if current_title.is_none() {
-                saw_structure = true;
-                current_title = Some(label.to_string());
-            } else if pairs.is_empty() && !label.contains('=') {
-                // Commented key placeholder from non-reveal export — skip.
-                saw_structure = true;
-                continue;
-            } else {
-                flush(&mut current_title, &mut pairs, &mut entries);
-                current_title = Some(label.to_string());
+            match &self.state {
+                DotenvParserState::Idle => {
+                    self.saw_structure = true;
+                    self.state = DotenvParserState::InEntry {
+                        title: label.to_string(),
+                        pairs: Vec::new(),
+                    };
+                }
+                DotenvParserState::InEntry { pairs, .. }
+                    if pairs.is_empty() && !label.contains('=') =>
+                {
+                    self.saw_structure = true;
+                }
+                DotenvParserState::InEntry { .. } => {
+                    self.flush_entry();
+                    self.state = DotenvParserState::InEntry {
+                        title: label.to_string(),
+                        pairs: Vec::new(),
+                    };
+                }
             }
-            continue;
+            return Ok(());
         }
 
         if let Some((key, value)) = line.split_once('=') {
@@ -173,29 +181,42 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
             if key.is_empty() {
                 return Err(KprunError::EmptyKey);
             }
-            if current_title.is_none() {
-                return Err(KprunError::Other(
-                    "dotenv import line before entry title comment".into(),
-                ));
+            match &mut self.state {
+                DotenvParserState::Idle => {
+                    return Err(KprunError::Other(
+                        "dotenv import line before entry title comment".into(),
+                    ));
+                }
+                DotenvParserState::InEntry { pairs, .. } => {
+                    self.saw_key_value = true;
+                    pairs.push((key.to_string(), parse_dotenv_value(value.trim())));
+                }
             }
-            saw_key_value = true;
-            pairs.push((key.to_string(), parse_dotenv_value(value.trim())));
-        } else {
-            return Err(KprunError::Other(format!(
-                "invalid dotenv import line: {line}"
-            )));
+            return Ok(());
         }
+
+        Err(KprunError::Other(format!(
+            "invalid dotenv import line: {line}"
+        )))
     }
 
-    flush(&mut current_title, &mut pairs, &mut entries);
-
-    if entries.is_empty() && saw_structure && !saw_key_value {
-        return Err(KprunError::Other(
-            "structure-only dotenv export cannot be imported; re-export with --reveal or use --merge carefully".into(),
-        ));
+    fn finish(mut self) -> Result<Vec<ParsedEntry>> {
+        self.flush_entry();
+        if self.entries.is_empty() && self.saw_structure && !self.saw_key_value {
+            return Err(KprunError::Other(
+                "structure-only dotenv export cannot be imported; re-export with --reveal or use --merge carefully".into(),
+            ));
+        }
+        Ok(self.entries)
     }
+}
 
-    Ok(entries)
+fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
+    let mut parser = DotenvParser::new();
+    for line in content.lines() {
+        parser.feed(line)?;
+    }
+    parser.finish()
 }
 
 /// Parse a dotenv value, unquoting and unescaping when wrapped in double quotes.
