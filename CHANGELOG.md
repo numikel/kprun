@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-06-28
+
+See [docs/changelogs/v0.2.4.md](docs/changelogs/v0.2.4.md) for details.
+
+### Changed
+
+- README scripts and automation documentation.
+
+### Fixed
+
+- Integration tests require `test-hooks` feature to avoid hang on `cargo test --all`.
+- Duplicate `license-file` manifest warning removed.
+
 ## [0.2.3] - 2026-06-26
 
 See [docs/changelogs/v0.2.3.md](docs/changelogs/v0.2.3.md) for details.
