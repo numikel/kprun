@@ -77,10 +77,10 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # v2.47.11
+      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
         if: needs.changes.outputs.code == 'true'
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest@0.9.138
       - name: Run tests
         if: needs.changes.outputs.code == 'true'
         run: cargo nextest run --all-features
@@ -136,7 +136,7 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # v2.47.11
+      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
         if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-audit@0.22.2
