@@ -139,7 +139,7 @@ jobs:
       - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # v2.47.11
         if: needs.changes.outputs.code == 'true'
         with:
-          tool: cargo-audit
+          tool: cargo-audit@0.22.2
       - name: Run cargo audit
         if: needs.changes.outputs.code == 'true'
         run: cargo audit
