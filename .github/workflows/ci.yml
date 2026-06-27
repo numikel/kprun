@@ -4,6 +4,10 @@ on:
     branches: [master, main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pin-check:
     runs-on: ubuntu-latest
@@ -22,7 +26,28 @@ jobs:
           fi
           echo "All actions pinned to SHA"
 
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'crates/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/ci.yml'
+            scripts:
+              - 'scripts/**'
+
   lint:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -31,10 +56,17 @@ jobs:
           toolchain: 1.88.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Format and lint
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+      - name: Skip (no code changes)
+        if: needs.changes.outputs.code != 'true'
+        run: echo "skipped"
 
   test:
+    needs: changes
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -45,14 +77,30 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - run: cargo test --all-features
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # v2.47.11
+        if: needs.changes.outputs.code == 'true'
+        with:
+          tool: cargo-nextest
+      - name: Run tests
+        if: needs.changes.outputs.code == 'true'
+        run: cargo nextest run --all-features
+      - name: Skip (no code changes)
+        if: needs.changes.outputs.code != 'true'
+        run: echo "skipped"
 
   install-script-smoke:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - run: bash -n scripts/install.sh
-      - run: pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("scripts/install.ps1", [ref]$null, [ref]$errs); if ($errs) { exit 1 }'
+      - name: Smoke-test install scripts
+        if: needs.changes.outputs.scripts == 'true'
+        run: |
+          bash -n scripts/install.sh
+          pwsh -NoProfile -Command '$errs=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("scripts/install.ps1", [ref]$null, [ref]$errs); if ($errs) { exit 1 }'
+      - name: Skip (no script changes)
+        if: needs.changes.outputs.scripts != 'true'
+        run: echo "skipped"
 
   release-prep-check:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
@@ -80,6 +128,7 @@ jobs:
           exit 1
 
   audit:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -88,6 +137,12 @@ jobs:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # v2.47.11
+        if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-audit
-      - run: cargo audit
+      - name: Run cargo audit
+        if: needs.changes.outputs.code == 'true'
+        run: cargo audit
+      - name: Skip (no code changes)
+        if: needs.changes.outputs.code != 'true'
+        run: echo "skipped"
