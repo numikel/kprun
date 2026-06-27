@@ -479,7 +479,7 @@ cargo build -p kprun
 ### Running tests
 
 ```bash
-cargo test --all
+cargo test --all-features
 ```
 
 KeePassXC compatibility test (optional, local fixture):
@@ -496,7 +496,7 @@ KPRUN_KEEPASSXC_FIXTURE=1 KPRUN_TEST_MASTER='your-pass' \
 ```bash
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all
+cargo test --all-features
 ```
 
 ## Security model
@@ -526,7 +526,7 @@ CI validates the changelog file and version match, builds release binaries for f
 2. Create a feature branch (`git checkout -b feat/my-change`).
 3. Commit using **Conventional Commits 1.0.0** (e.g. `feat(cli): add example command`, `fix(core): handle locked db`).
 4. Add or update tests for behavior changes.
-5. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all`.
+5. Run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all-features`.
 6. Open a pull request against `main`.
 
 Use English for code, comments, and CLI messages.

@@ -35,26 +35,32 @@ path = "../../tests/init.rs"
 [[test]]
 name = "init_set_run"
 path = "../../tests/init_set_run.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "mcp_stdio"
 path = "../../tests/mcp_stdio.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "manage"
 path = "../../tests/manage.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "export_import"
 path = "../../tests/export_import.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "doctor"
 path = "../../tests/doctor.rs"
+required-features = ["test-hooks"]
 
 [[test]]
 name = "keepassxc_compat"
 path = "../../tests/keepassxc_compat.rs"
+required-features = ["test-hooks"]
 
 [features]
 default = []
