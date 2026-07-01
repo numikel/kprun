@@ -40,7 +40,7 @@ pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
             match session.initialize()? {
                 streamable::InitOutcome::Ready(resp) => {
                     session.finish_initialize(resp)?;
-                    streamable::run_with(session, lines)
+                    streamable::run_with(session, &cfg, lines)
                 }
                 streamable::InitOutcome::Unauthorized(status) => Err(KprunError::Other(format!(
                     "server returned HTTP {status}: authentication failed — check the token in your vault entry"

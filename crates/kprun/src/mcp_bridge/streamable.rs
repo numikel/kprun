@@ -1,6 +1,8 @@
 //! Streamable HTTP transport (MCP 2025-03-26+): one POST per client message;
 //! each response is plain JSON or a per-response SSE stream.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use kprun_core::{KprunError, Result};
@@ -209,6 +211,57 @@ impl Session {
         Ok(())
     }
 
+    /// Optional server→client stream: GET the endpoint as text/event-stream.
+    /// Servers that offer no stream answer 405 — the thread ends quietly.
+    /// A dropped stream reconnects with Last-Event-ID until shutdown.
+    pub fn spawn_server_stream(&self, cfg: &BridgeConfig, shutdown: Arc<AtomicBool>) {
+        // Long-lived stream: connect timeout only, no global timeout.
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .build()
+            .into();
+        let url = cfg.url.clone();
+        let headers = self.headers.clone();
+        let session_id = self.session_id.clone();
+        std::thread::spawn(move || {
+            let mut last_event_id: Option<String> = None;
+            loop {
+                if shutdown.load(Ordering::Relaxed) {
+                    return;
+                }
+                let mut req = agent.get(&url).header("Accept", "text/event-stream");
+                for (name, value) in &headers {
+                    req = req.header(name.as_str(), value.as_str());
+                }
+                if let Some(sid) = &session_id {
+                    req = req.header("Mcp-Session-Id", sid.as_str());
+                }
+                if let Some(id) = &last_event_id {
+                    req = req.header("Last-Event-ID", id.as_str());
+                }
+                let Ok(mut resp) = req.call() else { return };
+                if resp.status().as_u16() != 200 {
+                    return; // no stream offered (405 typical)
+                }
+                let reader = resp.body_mut().as_reader();
+                for event in SseParser::new(reader) {
+                    let Ok(event) = event else { break };
+                    if let Some(id) = &event.id {
+                        last_event_id = Some(id.clone());
+                    }
+                    if !event.data.is_empty() {
+                        write_frame(&event.data);
+                    }
+                }
+                if shutdown.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+    }
+
     /// Best-effort session termination (spec: HTTP DELETE).
     pub fn shutdown(&self) {
         let Some(sid) = &self.session_id else { return };
@@ -225,8 +278,11 @@ impl Session {
 
 pub fn run_with(
     mut session: Session,
+    cfg: &BridgeConfig,
     lines: impl Iterator<Item = std::io::Result<String>>,
 ) -> Result<i32> {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    session.spawn_server_stream(cfg, shutdown.clone());
     for line in lines {
         let frame = line?;
         if frame.trim().is_empty() {
@@ -234,6 +290,7 @@ pub fn run_with(
         }
         session.handle_frame(&frame);
     }
+    shutdown.store(true, Ordering::Relaxed);
     session.shutdown();
     Ok(0)
 }

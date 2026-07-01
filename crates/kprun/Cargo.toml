@@ -23,6 +23,7 @@ ureq.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true
 kprun-core = { path = "../kprun-core" }
 
 [[test]]
