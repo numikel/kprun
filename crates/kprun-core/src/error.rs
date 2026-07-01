@@ -25,6 +25,8 @@ pub enum KprunError {
     UnknownTemplateField(String),
     #[error("malformed template: {0}")]
     MalformedTemplate(String),
+    #[error("cannot unlock vault non-interactively; store the master password with `kprun init` or set KPRUN_KEYFILE for a keyfile-only vault")]
+    NonInteractiveUnlock,
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
