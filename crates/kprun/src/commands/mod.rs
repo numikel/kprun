@@ -14,6 +14,7 @@ mod get;
 mod import;
 mod init;
 mod list;
+mod mcp;
 mod run;
 mod set;
 mod unset;
@@ -47,6 +48,16 @@ pub fn dispatch(command: Commands) {
         } => std::process::exit(export::execute(format, stdout, reveal, output)),
         Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
         Commands::Doctor { mcp, command } => std::process::exit(doctor::execute(mcp, command)),
+        Commands::Mcp {
+            entry,
+            headers,
+            bearer,
+            transport,
+            timeout,
+            url,
+        } => std::process::exit(mcp::execute(
+            entry, headers, bearer, transport, timeout, url,
+        )),
         Commands::Deinit => std::process::exit(deinit::execute()),
     }
 }
