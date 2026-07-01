@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `kprun mcp` — native stdio↔HTTP bridge for hosted MCP servers: vault-backed
+  `{{FIELD}}` auth headers, Streamable HTTP with session management, automatic
+  fallback to the deprecated HTTP+SSE transport (#25)
+
 ## [0.2.4] - 2026-06-28
 
 See [docs/changelogs/v0.2.4.md](docs/changelogs/v0.2.4.md) for details.
