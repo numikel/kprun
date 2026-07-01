@@ -43,6 +43,11 @@ path = "../../tests/mcp_stdio.rs"
 required-features = ["test-hooks"]
 
 [[test]]
+name = "mcp_bridge"
+path = "../../tests/mcp_bridge.rs"
+required-features = ["test-hooks"]
+
+[[test]]
 name = "manage"
 path = "../../tests/manage.rs"
 required-features = ["test-hooks"]
