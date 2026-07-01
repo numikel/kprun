@@ -455,3 +455,140 @@ fn server_get_stream_messages_reach_stdout() {
         Some("text/event-stream")
     );
 }
+
+#[test]
+fn legacy_fallback_on_405_bridges_via_sse() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        match (req.method.as_str(), req.path.as_str()) {
+            // Streamable probe: old server answers 405 → fallback.
+            ("POST", "/sse") => MockResponse::Empty { status: 405, headers: vec![] },
+            // Legacy GET stream: endpoint event, then the init response.
+            ("GET", "/sse") => MockResponse::Sse {
+                status: 200,
+                payload: format!(
+                    "event: endpoint\ndata: /messages?sid=legacy-1\n\nevent: message\ndata: {INIT_RESULT}\n\nevent: message\ndata: {LIST_RESULT}\n\n"
+                ),
+            },
+            // Client messages POSTed to the endpoint from the event.
+            ("POST", "/messages?sid=legacy-1") => {
+                MockResponse::Empty { status: 202, headers: vec![] }
+            }
+            _ => MockResponse::Empty { status: 500, headers: vec![] },
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/sse"),
+        ])
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(
+        stdout.lines().collect::<Vec<_>>(),
+        vec![INIT_RESULT, LIST_RESULT]
+    );
+
+    let requests = server.requests.lock().unwrap();
+    let legacy_posts: Vec<_> = requests
+        .iter()
+        .filter(|r| r.path == "/messages?sid=legacy-1")
+        .collect();
+    assert_eq!(legacy_posts.len(), 2);
+    assert_eq!(legacy_posts[0].body, INIT);
+    assert_eq!(
+        legacy_posts[0]
+            .headers
+            .get("authorization")
+            .map(String::as_str),
+        Some("Bearer github_pat_test")
+    );
+}
+
+#[test]
+fn unauthorized_401_never_falls_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|_| MockResponse::Empty {
+        status: 401,
+        headers: vec![],
+    });
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("authentication failed"));
+
+    let requests = server.requests.lock().unwrap();
+    assert!(requests.iter().all(|r| r.method == "POST"));
+    assert_eq!(requests.len(), 1); // no GET probe, no retry
+}
+
+#[test]
+fn explicit_transport_sse_skips_streamable_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/sse") => MockResponse::Sse {
+            status: 200,
+            payload: format!(
+                "event: endpoint\ndata: /messages\n\nevent: message\ndata: {INIT_RESULT}\n\n"
+            ),
+        },
+        ("POST", "/messages") => MockResponse::Empty {
+            status: 202,
+            headers: vec![],
+        },
+        _ => MockResponse::Empty {
+            status: 500,
+            headers: vec![],
+        },
+    });
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--transport",
+            "sse",
+            &server.url("/sse"),
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .success()
+        .stdout(format!("{INIT_RESULT}\n"));
+
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "GET"); // no streamable POST probe
+}

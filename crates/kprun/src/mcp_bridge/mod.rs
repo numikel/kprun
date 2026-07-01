@@ -3,6 +3,7 @@
 //! Invariants: stdout carries exclusively JSON-RPC frames; message bodies
 //! pass through byte-for-byte; secrets never leave process memory.
 
+pub mod legacy_sse;
 pub mod sse;
 pub mod streamable;
 
@@ -36,7 +37,7 @@ pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
     let first = first?;
     match cfg.transport {
         Transport::Streamable | Transport::Auto => {
-            let mut session = streamable::Session::new(&cfg, first);
+            let mut session = streamable::Session::new(&cfg, first.clone());
             match session.initialize()? {
                 streamable::InitOutcome::Ready(resp) => {
                     session.finish_initialize(resp)?;
@@ -45,15 +46,23 @@ pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
                 streamable::InitOutcome::Unauthorized(status) => Err(KprunError::Other(format!(
                     "server returned HTTP {status}: authentication failed — check the token in your vault entry"
                 ))),
-                // Legacy fallback lands in a follow-up task.
-                streamable::InitOutcome::FallbackToLegacy(status) => Err(KprunError::Other(
-                    format!("server rejected streamable HTTP (status {status})"),
-                )),
+                streamable::InitOutcome::FallbackToLegacy(status) => {
+                    if cfg.transport == Transport::Auto {
+                        // MCP backwards compatibility: non-auth 4xx on the
+                        // initialize POST → deprecated HTTP+SSE transport.
+                        eprintln!(
+                            "kprun mcp: streamable HTTP rejected (HTTP {status}); falling back to HTTP+SSE"
+                        );
+                        legacy_sse::run(&cfg, first, lines)
+                    } else {
+                        Err(KprunError::Other(format!(
+                            "server rejected streamable HTTP (status {status}); try --transport auto"
+                        )))
+                    }
+                }
             }
         }
-        Transport::LegacySse => Err(KprunError::Other(
-            "--transport sse is not implemented yet".to_string(),
-        )),
+        Transport::LegacySse => legacy_sse::run(&cfg, first, lines),
     }
 }
 
