@@ -115,6 +115,26 @@ pub enum Commands {
         )]
         command: Vec<String>,
     },
+    /// Bridge stdio JSON-RPC to a remote HTTP MCP server, injecting vault-backed auth headers
+    Mcp {
+        /// Vault entry whose custom fields fill {{FIELD}} templates
+        #[arg(short = 'e', long)]
+        entry: String,
+        /// Extra header as 'Name: template' with {{FIELD}} substitution (repeatable)
+        #[arg(long = "header")]
+        headers: Vec<String>,
+        /// Shorthand for --header "Authorization: Bearer {{FIELD}}"
+        #[arg(long, value_name = "FIELD")]
+        bearer: Option<String>,
+        /// Remote transport (auto follows MCP spec backwards-compatibility detection)
+        #[arg(long, value_enum, default_value_t = McpTransport::Auto)]
+        transport: McpTransport,
+        /// Per-request timeout in seconds (SSE streams are exempt)
+        #[arg(long, default_value_t = 30)]
+        timeout: u64,
+        /// Remote MCP endpoint URL (supports {{FIELD}} substitution)
+        url: String,
+    },
     /// Remove the stored master password for the current vault from the OS keychain
     Deinit,
 }
@@ -125,4 +145,78 @@ pub enum ExportFormat {
     Json,
     /// kprun dotenv blocks (`# entry` headers and KEY=value lines)
     Dotenv,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum McpTransport {
+    /// Detect per MCP spec: try Streamable HTTP, fall back to HTTP+SSE
+    Auto,
+    /// Streamable HTTP (2025-03-26+) only
+    StreamableHttp,
+    /// Deprecated HTTP+SSE (2024-11-05) only
+    Sse,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn mcp_parses_all_flags() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--header",
+            "X-Org: {{ORG}}",
+            "--transport",
+            "streamable-http",
+            "--timeout",
+            "10",
+            "https://api.example.com/mcp/",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Mcp {
+                entry,
+                headers,
+                bearer,
+                transport,
+                timeout,
+                url,
+            } => {
+                assert_eq!(entry, "github");
+                assert_eq!(headers, vec!["X-Org: {{ORG}}".to_string()]);
+                assert_eq!(bearer.as_deref(), Some("TOKEN"));
+                assert!(matches!(transport, McpTransport::StreamableHttp));
+                assert_eq!(timeout, 10);
+                assert_eq!(url, "https://api.example.com/mcp/");
+            }
+            _ => panic!("expected Commands::Mcp"),
+        }
+    }
+
+    #[test]
+    fn mcp_defaults_transport_auto_timeout_30() {
+        let cli = Cli::try_parse_from(["kprun", "mcp", "-e", "gh", "https://x.test/"]).unwrap();
+        match cli.command {
+            Commands::Mcp {
+                transport, timeout, ..
+            } => {
+                assert!(matches!(transport, McpTransport::Auto));
+                assert_eq!(timeout, 30);
+            }
+            _ => panic!("expected Commands::Mcp"),
+        }
+    }
+
+    #[test]
+    fn mcp_requires_entry_and_url() {
+        assert!(Cli::try_parse_from(["kprun", "mcp", "https://x.test/"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "mcp", "-e", "gh"]).is_err());
+    }
 }

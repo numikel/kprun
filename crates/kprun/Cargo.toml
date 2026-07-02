@@ -17,11 +17,13 @@ serde_json.workspace = true
 which.workspace = true
 rpassword.workspace = true
 zeroize.workspace = true
+ureq.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true
 kprun-core = { path = "../kprun-core" }
 
 [[test]]
@@ -40,6 +42,11 @@ required-features = ["test-hooks"]
 [[test]]
 name = "mcp_stdio"
 path = "../../tests/mcp_stdio.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "mcp_bridge"
+path = "../../tests/mcp_bridge.rs"
 required-features = ["test-hooks"]
 
 [[test]]

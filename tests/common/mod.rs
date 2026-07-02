@@ -1,6 +1,8 @@
 //! Shared helpers for kprun integration tests.
 #![allow(dead_code)]
 
+pub mod mcp_mock;
+
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;

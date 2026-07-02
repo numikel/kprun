@@ -5,6 +5,7 @@ pub mod import;
 pub mod inject;
 pub mod parse;
 pub mod secure_fs;
+pub mod template;
 pub mod unlock;
 pub mod vault;
 

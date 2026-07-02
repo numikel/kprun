@@ -21,6 +21,12 @@ pub enum KprunError {
     DuplicateEntry(String),
     #[error("master password too short: minimum {0} characters required")]
     WeakPassword(usize),
+    #[error("template references unknown field '{0}' (not present on the vault entry)")]
+    UnknownTemplateField(String),
+    #[error("malformed template: {0}")]
+    MalformedTemplate(String),
+    #[error("cannot unlock vault non-interactively; store the master password with `kprun init` or set KPRUN_KEYFILE for a keyfile-only vault")]
+    NonInteractiveUnlock,
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
