@@ -26,6 +26,13 @@ pub enum MockResponse {
     },
     /// Streams `payload` as `text/event-stream`, then closes the connection.
     Sse { status: u16, payload: String },
+    /// Streams `prefix` as `text/event-stream`, then writes a couple of
+    /// invalid-UTF-8 bytes with no terminating newline before closing.
+    /// `BufRead::read_line` surfaces that as a genuine `io::Error`
+    /// (`InvalidData`) on the client's next read — simulating a connection
+    /// that breaks mid-stream, as opposed to a graceful EOF (which the SSE
+    /// parser treats as a normal, silent end of stream).
+    SseReset { status: u16, prefix: String },
     Empty {
         status: u16,
         headers: Vec<(String, String)>,
@@ -138,6 +145,17 @@ fn write_response(stream: &mut TcpStream, response: MockResponse) {
             );
             let _ = stream.write_all(head.as_bytes());
             let _ = stream.write_all(payload.as_bytes());
+            let _ = stream.flush();
+        }
+        MockResponse::SseReset { status, prefix } => {
+            let head = format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(prefix.as_bytes());
+            // Invalid UTF-8, no terminating newline: forces a genuine
+            // read error rather than a clean EOF once the connection closes.
+            let _ = stream.write_all(&[0xFF, 0xFE]);
             let _ = stream.flush();
         }
         MockResponse::Empty { status, headers } => {

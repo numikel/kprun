@@ -59,7 +59,13 @@ pub fn run(
     let (done_tx, done_rx) = mpsc::channel::<()>();
     std::thread::spawn(move || {
         for event in parser {
-            let Ok(event) = event else { break };
+            let event = match event {
+                Ok(event) => event,
+                Err(e) => {
+                    eprintln!("kprun mcp: legacy SSE stream read error: {e}");
+                    break;
+                }
+            };
             if !event.data.is_empty() {
                 write_frame(&event.data);
             }

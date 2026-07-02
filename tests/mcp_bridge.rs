@@ -355,6 +355,165 @@ fn session_404_triggers_transparent_reinit_and_retry() {
 }
 
 #[test]
+fn get_stream_survives_session_reinit() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    const SERVER_NOTE: &str = r#"{"jsonrpc":"2.0","method":"notifications/message"}"#;
+
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let post_count = std::sync::Arc::new(AtomicUsize::new(0));
+    let get_count = std::sync::Arc::new(AtomicUsize::new(0));
+    let get_sess2_seen = std::sync::Arc::new(AtomicBool::new(false));
+
+    let posts = post_count.clone();
+    let gets = get_count.clone();
+    let seen = get_sess2_seen.clone();
+    let server = MockServer::start(move |req| {
+        if req.method == "GET" {
+            let n = gets.fetch_add(1, Ordering::SeqCst);
+            // Force the very first GET (whatever session id it carries) to
+            // look like a stale/unknown session, mirroring the spec's 404
+            // behavior for session-carrying requests. Only once the bridge
+            // retries with the *current* session id (sess-2, captured after
+            // re-init) does the stream succeed.
+            if n == 0 {
+                return MockResponse::Empty {
+                    status: 404,
+                    headers: vec![],
+                };
+            }
+            return match req.headers.get("mcp-session-id").map(String::as_str) {
+                Some("sess-2") => {
+                    seen.store(true, Ordering::SeqCst);
+                    MockResponse::Sse {
+                        status: 200,
+                        payload: format!("data: {SERVER_NOTE}\n\n"),
+                    }
+                }
+                _ => MockResponse::Empty {
+                    status: 404,
+                    headers: vec![],
+                },
+            };
+        }
+        if req.method == "DELETE" {
+            return MockResponse::Empty {
+                status: 200,
+                headers: vec![],
+            };
+        }
+        let n = posts.fetch_add(1, Ordering::SeqCst);
+        match n {
+            0 => init_response(), // initialize -> sess-1
+            1 => MockResponse::Empty {
+                status: 404,
+                headers: vec![],
+            }, // tools/list: session expired
+            2 => MockResponse::Json {
+                // transparent re-init -> sess-2
+                status: 200,
+                headers: vec![("Mcp-Session-Id".into(), "sess-2".into())],
+                body: INIT_RESULT.into(),
+            },
+            _ => {
+                // Retried tools/list. Block the response until the
+                // background GET-stream thread has retried with the new
+                // session id and received the server-initiated frame —
+                // otherwise the main thread races ahead, flips `shutdown`,
+                // and the process exits before the GET thread's next
+                // reconnect attempt runs.
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while !seen.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                MockResponse::Json {
+                    status: 200,
+                    headers: vec![],
+                    body: LIST_RESULT.into(),
+                }
+            }
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        stdout.contains(SERVER_NOTE),
+        "server-initiated frame after session re-init never reached stdout: {stdout:?}"
+    );
+    assert!(stdout.lines().any(|l| l == INIT_RESULT));
+    assert!(stdout.lines().any(|l| l == LIST_RESULT));
+    assert!(get_sess2_seen.load(Ordering::SeqCst));
+}
+
+#[test]
+fn sse_error_after_partial_forward_skips_duplicate_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            // Forward one complete, valid event (the tools/list result),
+            // then the connection breaks mid-stream (TCP RST) before any
+            // terminating blank line for a would-be next event — a genuine
+            // read error, not a clean EOF.
+            MockResponse::SseReset {
+                status: 200,
+                prefix: format!("event: message\ndata: {LIST_RESULT}\n\n"),
+            }
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    // The result was already forwarded when the stream broke; the bridge
+    // must NOT also emit a -32603 error for the same request id.
+    assert_eq!(
+        lines,
+        vec![INIT_RESULT, LIST_RESULT],
+        "duplicate result+error (or missing result) for id 2: {lines:?}"
+    );
+}
+
+#[test]
 fn failed_request_emits_jsonrpc_error_and_bridge_survives() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");

@@ -2,7 +2,7 @@
 //! each response is plain JSON or a per-response SSE stream.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kprun_core::{KprunError, Result};
@@ -28,7 +28,10 @@ pub struct Session {
     post_agent: ureq::Agent,
     url: String,
     headers: Vec<(String, String)>,
-    session_id: Option<String>,
+    /// Shared with the background GET-stream thread so it always sees the
+    /// current session id, including after a transparent re-init replaces
+    /// it mid-flight.
+    session_id: Arc<Mutex<Option<String>>>,
     protocol_version: Option<String>,
     /// Raw initialize frame, kept byte-for-byte for transparent re-init.
     init_frame: String,
@@ -46,10 +49,14 @@ impl Session {
             post_agent,
             url: cfg.url.clone(),
             headers: cfg.headers.clone(),
-            session_id: None,
+            session_id: Arc::new(Mutex::new(None)),
             protocol_version: None,
             init_frame,
         }
+    }
+
+    fn session_id(&self) -> Option<String> {
+        self.session_id.lock().unwrap().clone()
     }
 
     fn post_raw(&self, frame: &str) -> Result<ureq::http::Response<ureq::Body>> {
@@ -61,7 +68,7 @@ impl Session {
         for (name, value) in &self.headers {
             req = req.header(name.as_str(), value.as_str());
         }
-        if let Some(sid) = &self.session_id {
+        if let Some(sid) = self.session_id() {
             req = req.header("Mcp-Session-Id", sid.as_str());
         }
         if let Some(version) = &self.protocol_version {
@@ -116,7 +123,7 @@ impl Session {
             .get("mcp-session-id")
             .and_then(|v| v.to_str().ok())
         {
-            self.session_id = Some(sid.to_string());
+            *self.session_id.lock().unwrap() = Some(sid.to_string());
         }
     }
 
@@ -167,7 +174,7 @@ impl Session {
     fn post_and_forward(&mut self, frame: &str) -> Result<PostOutcome> {
         let mut resp = self.post_raw(frame)?;
         let status = resp.status().as_u16();
-        if status == 404 && self.session_id.is_some() {
+        if status == 404 && self.session_id().is_some() {
             return Ok(PostOutcome::SessionExpired);
         }
         if status == 202 {
@@ -179,10 +186,26 @@ impl Session {
         let mime = resp.body().mime_type().unwrap_or("").to_string();
         if mime.starts_with("text/event-stream") {
             let reader = resp.body_mut().as_reader();
+            // Track whether anything was already forwarded: if the stream
+            // breaks (e.g. mid-response error) after a result already
+            // reached the client, the caller must not also emit a
+            // JSON-RPC error for the same request id.
+            let mut forwarded_any = false;
             for event in SseParser::new(reader) {
-                let event = event?;
-                if !event.data.is_empty() {
-                    write_frame(&event.data);
+                match event {
+                    Ok(event) => {
+                        if !event.data.is_empty() {
+                            write_frame(&event.data);
+                            forwarded_any = true;
+                        }
+                    }
+                    Err(e) => {
+                        if forwarded_any {
+                            eprintln!("kprun mcp: SSE stream error after partial response: {e}");
+                            return Ok(PostOutcome::Done);
+                        }
+                        return Err(e.into());
+                    }
                 }
             }
         } else {
@@ -196,7 +219,7 @@ impl Session {
     }
 
     fn reinitialize(&mut self) -> Result<()> {
-        self.session_id = None;
+        *self.session_id.lock().unwrap() = None;
         let frame = self.init_frame.clone();
         let mut resp = self.post_raw(&frame)?;
         let status = resp.status().as_u16();
@@ -212,8 +235,15 @@ impl Session {
     }
 
     /// Optional server→client stream: GET the endpoint as text/event-stream.
-    /// Servers that offer no stream answer 405 — the thread ends quietly.
-    /// A dropped stream reconnects with Last-Event-ID until shutdown.
+    /// Servers that offer no stream answer 405 before any stream has ever
+    /// been established — the thread ends quietly rather than polling an
+    /// endpoint that will never support it. A 404 (unknown/stale session,
+    /// e.g. a race with `reinitialize`) or any failure once a stream has
+    /// already been established is instead treated as transient: the loop
+    /// re-reads the *current* session id (shared with `reinitialize` via
+    /// `session_id`) and retries, so the stream comes back once re-init
+    /// completes. A dropped stream reconnects with Last-Event-ID until
+    /// shutdown.
     pub fn spawn_server_stream(&self, cfg: &BridgeConfig, shutdown: Arc<AtomicBool>) {
         // Long-lived stream: connect timeout only, no global timeout.
         let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -226,27 +256,66 @@ impl Session {
         let session_id = self.session_id.clone();
         std::thread::spawn(move || {
             let mut last_event_id: Option<String> = None;
+            let mut ever_streamed = false;
             loop {
                 if shutdown.load(Ordering::Relaxed) {
                     return;
                 }
+                let current_sid = session_id.lock().unwrap().clone();
                 let mut req = agent.get(&url).header("Accept", "text/event-stream");
                 for (name, value) in &headers {
                     req = req.header(name.as_str(), value.as_str());
                 }
-                if let Some(sid) = &session_id {
+                if let Some(sid) = &current_sid {
                     req = req.header("Mcp-Session-Id", sid.as_str());
                 }
                 if let Some(id) = &last_event_id {
                     req = req.header("Last-Event-ID", id.as_str());
                 }
-                let Ok(mut resp) = req.call() else { return };
-                if resp.status().as_u16() != 200 {
-                    return; // no stream offered (405 typical)
+                let mut resp = match req.call() {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        eprintln!("kprun mcp: server stream connection failed: {e}");
+                        if !ever_streamed {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_secs(1));
+                        continue;
+                    }
+                };
+                let status = resp.status().as_u16();
+                if status != 200 {
+                    // 404 signals an unknown/stale session (spec semantics
+                    // shared with the POST path) and is always worth a
+                    // retry with a fresh session id. Any other non-200
+                    // status is only retryable once a stream has already
+                    // succeeded once; before that, it means the server
+                    // simply offers no GET stream (405 typical).
+                    if status != 404 && !ever_streamed {
+                        return;
+                    }
+                    eprintln!("kprun mcp: server stream request rejected: HTTP {status}");
+                    // A 404 is likely a short-lived race with an in-flight
+                    // `reinitialize` on the POST path; retry quickly rather
+                    // than waiting out the full idle-reconnect backoff.
+                    let backoff = if status == 404 {
+                        Duration::from_millis(100)
+                    } else {
+                        Duration::from_secs(1)
+                    };
+                    std::thread::sleep(backoff);
+                    continue;
                 }
+                ever_streamed = true;
                 let reader = resp.body_mut().as_reader();
                 for event in SseParser::new(reader) {
-                    let Ok(event) = event else { break };
+                    let event = match event {
+                        Ok(event) => event,
+                        Err(e) => {
+                            eprintln!("kprun mcp: server stream read error: {e}");
+                            break;
+                        }
+                    };
                     if let Some(id) = &event.id {
                         last_event_id = Some(id.clone());
                     }
@@ -264,7 +333,9 @@ impl Session {
 
     /// Best-effort session termination (spec: HTTP DELETE).
     pub fn shutdown(&self) {
-        let Some(sid) = &self.session_id else { return };
+        let Some(sid) = self.session_id() else {
+            return;
+        };
         let mut req = self
             .post_agent
             .delete(&self.url)
