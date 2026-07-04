@@ -48,7 +48,8 @@ Two-crate Cargo workspace:
 
 **`crates/kprun-core`** — pure library, no Clap dependency:
 - `vault.rs` — `Vault` struct wrapping `keepass::Database`; `open_vault` / `create_vault`; all entry CRUD; `OpenMode` (ReadOnly / ReadWrite); custom fields = env vars (standard KeePass fields like Title/Password/UserName are excluded)
-- `unlock.rs` — `MasterPasswordSource` trait; unlock priority: `KPRUN_KEYFILE` → OS keyring (SHA-256 of canonical db path as account name) → stderr prompt; `build_database_key` composes password + optional keyfile; `test-hooks` feature enables `KPRUN_TEST_MASTER` env override
+- `unlock.rs` — `MasterPasswordSource` trait; unlock priority: `KPRUN_KEYFILE` → OS keyring (SHA-256 of canonical db path as account name) → stderr prompt; `build_database_key` composes password + optional keyfile; `test-hooks` feature enables `KPRUN_TEST_MASTER` env override; `unlock_noninteractive` (mcp mode: keyring/keyfile only, never prompts)
+- `template.rs` — `{{FIELD}}` template resolution against vault entry custom fields, used to build headers and URLs for `kprun mcp`
 - `inject.rs` — `resolve_injection` merges custom fields from multiple entries, blocks a hardcoded `DANGEROUS_ENV` list (PATH, LD_PRELOAD, etc.), warns on key collisions
 - `audit.rs` — appends JSON-lines to `~/.kprun/access.log`; records entry names and injected key names, **never values**
 - `config.rs` — reads `KPRUN_DB`, `KPRUN_KEYFILE`, `KPRUN_LOG` from environment; defaults to `~/.kprun/`
@@ -59,6 +60,8 @@ Two-crate Cargo workspace:
 - `cli.rs` — Clap `Cli` / `Commands` enum; all subcommand argument definitions
 - `commands/mod.rs` — `dispatch()` routes to per-command modules; shared helpers `unlock_vault`, `mutate_vault`, `run_command`
 - `commands/run.rs` — opens vault read-only, resolves injection, writes audit log, spawns child
+- `commands/mcp.rs` — non-interactive unlock, `{{FIELD}}` template resolution, audit (header names + URL host only), hands off to the bridge
+- `mcp_bridge/` — stdio↔HTTP MCP bridge: `streamable.rs` (Streamable HTTP, `Mcp-Session-Id` lifecycle, 404 re-init), `legacy_sse.rs` (deprecated HTTP+SSE), `sse.rs` (shared SSE parser)
 - `spawn.rs` — `run_child` builds `std::process::Command`; `--clean-env` drops parent env except safe vars (PATH, HOME, etc.); Windows-aware `resolve_executable` checks PATHEXT
 - `ui.rs` — terminal output helpers
 
@@ -71,6 +74,7 @@ Two-crate Cargo workspace:
 - `Vault::save` normalizes legacy KDBX4.0 minor version to 4.1 before persisting
 - Entry lookup is case-insensitive; duplicate titles return `KprunError::DuplicateEntry`
 - `--features test-hooks` must NOT be present in release binaries (bypasses password prompt)
+- `kprun mcp` stdout carries exclusively JSON-RPC frames; message bodies pass through byte-for-byte; 401/403 during transport detection never triggers legacy fallback
 
 ## Release process
 

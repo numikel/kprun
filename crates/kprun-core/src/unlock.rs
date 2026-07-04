@@ -99,6 +99,34 @@ pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
     }
 }
 
+/// Unlock without any TTY interaction (for `kprun mcp`, where stdin carries
+/// JSON-RPC frames and no terminal is attached). Order: test hook (feature
+/// gated) → OS keyring → keyfile-only key. Never prompts.
+pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<DatabaseKey> {
+    #[cfg(feature = "test-hooks")]
+    if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
+        return build_database_key(ctx, &pw);
+    }
+    match unlock_master(
+        ctx,
+        &SystemUnlock {
+            db_path: &ctx.db_path,
+        },
+    ) {
+        Ok(pw) => build_database_key(ctx, &pw),
+        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => match &ctx.keyfile {
+            Some(path) => {
+                let mut file = File::open(path)?;
+                DatabaseKey::new()
+                    .with_keyfile(&mut file)
+                    .map_err(|e| KprunError::Other(e.to_string()))
+            }
+            None => Err(KprunError::NonInteractiveUnlock),
+        },
+        Err(e) => Err(e),
+    }
+}
+
 pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<DatabaseKey> {
     let mut key = DatabaseKey::new().with_password(master);
     if let Some(path) = &ctx.keyfile {
@@ -185,5 +213,40 @@ mod tests {
         assert_eq!(std::fs::read(&kf).unwrap().len(), 64);
         let mode = std::fs::metadata(&kf).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn noninteractive_unlocks_keyfile_only_vault() {
+        // No keyring entry exists for this fresh temp path, so the keyring
+        // step fails and the keyfile-only fallback must kick in.
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("secrets.kdbx");
+        let kf = dir.path().join("kprun.keyfile");
+        generate_keyfile(&kf).unwrap();
+
+        let mut file = File::open(&kf).unwrap();
+        let key = DatabaseKey::new().with_keyfile(&mut file).unwrap();
+        crate::vault::create_vault(&db, key, "kprun").unwrap();
+
+        let ctx = UnlockContext {
+            keyfile: Some(kf),
+            db_path: db.clone(),
+        };
+        let key = unlock_noninteractive(&ctx).unwrap();
+        crate::vault::open_vault(&db, key, crate::vault::OpenMode::ReadOnly).unwrap();
+    }
+
+    #[test]
+    fn noninteractive_without_keyring_or_keyfile_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: dir.path().join("no-such.kdbx"),
+        };
+        let err = unlock_noninteractive(&ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            KprunError::NonInteractiveUnlock | KprunError::Keyring(_)
+        ));
     }
 }

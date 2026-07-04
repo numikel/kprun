@@ -1,4 +1,4 @@
-# kprun v0.2.4
+# kprun v0.3.0
 
 [![CI](https://github.com/numikel/kprun/actions/workflows/ci.yml/badge.svg)](https://github.com/numikel/kprun/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -424,6 +424,33 @@ kprun doctor --mcp qdrant -- npx -y @modelcontextprotocol/server-qdrant
 Without a child command, generic entries emit `["run", "<entry>", "--"]` and a stderr hint — paste the server command into `args` manually or re-run with `--`.
 
 After editing MCP config, check `git diff` — some tools may write secrets back to disk.
+
+### kprun mcp — hosted MCP servers
+
+Hosted MCP servers (GitHub Copilot, remote SaaS endpoints, …) don't spawn a local child process — the client talks HTTP directly to a URL, so the bearer token or API key normally sits in plaintext inside `mcp.json`. `kprun mcp` closes that gap: it's a stdio↔HTTP bridge that reads the token from the vault at launch and never writes it to disk.
+
+```bash
+kprun mcp -e <entry> [--header "Name: template"]... [--bearer FIELD] \
+  [--transport auto|streamable-http|sse] [--timeout SECS] <url>
+```
+
+- `-e, --entry <ENTRY>` — vault entry whose custom fields fill `{{FIELD}}` templates in headers and the URL
+- `--header "Name: template"` — extra header, repeatable, with `{{FIELD}}` substitution
+- `--bearer FIELD` — shorthand for `--header "Authorization: Bearer {{FIELD}}"`
+- `--transport` — `auto` (default, follows the MCP spec's backwards-compatibility detection: try Streamable HTTP, fall back to the deprecated HTTP+SSE), `streamable-http`, or `sse` (deprecated HTTP+SSE only)
+- `--timeout SECS` — per-request timeout for POST round-trips (default 30; SSE streams are exempt — they're long-lived by design)
+
+Client config:
+
+```jsonc
+"GitHub": {
+  "command": "kprun",
+  "args": ["mcp", "-e", "github", "--bearer", "TOKEN",
+           "https://api.githubcopilot.com/mcp/"]
+}
+```
+
+`kprun mcp` never prompts — it needs a non-interactive unlock path. Run `kprun init` first so the master password is cached in the OS keyring, or set `KPRUN_KEYFILE` (see [Automation and cron](#automation-and-cron)). Like `run`, it writes nothing but JSON-RPC frames to stdout; the audit log records header names and the URL host only, never token values.
 
 ## Automation and cron
 
