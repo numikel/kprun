@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-07-02
+## [0.3.0] - 2026-07-04
 
 See [docs/changelogs/v0.3.0.md](docs/changelogs/v0.3.0.md) for details.
 
@@ -21,6 +21,10 @@ See [docs/changelogs/v0.3.0.md](docs/changelogs/v0.3.0.md) for details.
 ### Fixed
 
 - MCP GET stream session re-init, JSON-RPC duplicate error frames, SSE reader error logging.
+
+### Security
+
+- `keepass` bumped to 0.13.11, fixing `quick-xml` advisories RUSTSEC-2026-0194/0195.
 
 ## [0.2.4] - 2026-06-28
 
