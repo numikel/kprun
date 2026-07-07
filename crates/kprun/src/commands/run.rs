@@ -28,7 +28,7 @@ fn run_inner(entries: Vec<String>, command: Vec<String>, clean_env: bool) -> Res
     log_access(
         &cfg,
         &AuditRecord::new(
-            cfg.db_path.clone(),
+            &cfg.db_path,
             injection.entries.clone(),
             injection.injected_keys.clone(),
             child_cmd,

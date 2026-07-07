@@ -81,7 +81,7 @@ fn mcp_inner(
     log_access(
         &cfg,
         &AuditRecord::new(
-            cfg.db_path.clone(),
+            &cfg.db_path,
             vec![entry],
             header_names,
             Some(format!("mcp {}", host_of(&resolved_url))),

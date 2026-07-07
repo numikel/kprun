@@ -35,6 +35,8 @@ Vaults created by `kprun init` use **Argon2id** (RFC 9106) with 64 MiB memory, 3
 
 Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, inheritance is removed and access is limited to the current user).
 
+The audit log (`access.log`) records, per line: timestamp, pid, a non-identifying vault id (truncated SHA-256 of the canonical db path — never the raw path), entry titles, injected key **names**, and the child command name or MCP URL host. Secret values never reach the log.
+
 ### Keychain storage
 
 When you run `kprun init` without `--no-store`, the KeePass master password is stored in the OS keychain (Credential Manager on Windows, Keychain on macOS, Secret Service on Linux). The entry is keyed per vault path (`kprun` / `master:<sha256(db_path)>`), not shared across vaults. The password is stored as plaintext in the keychain — anyone with access to your unlocked OS session can read it. Use `kprun deinit` to remove the stored password for the current vault.

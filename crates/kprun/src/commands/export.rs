@@ -33,10 +33,7 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
     if reveal {
         let titles: Vec<String> = summaries.iter().map(|e| e.title.clone()).collect();
         let keys: Vec<String> = summaries.iter().flat_map(|e| e.keys.clone()).collect();
-        audit_access(
-            &cfg,
-            AuditRecord::new(cfg.db_path.clone(), titles, keys, None),
-        )?;
+        audit_access(&cfg, AuditRecord::new(&cfg.db_path, titles, keys, None))?;
     }
 
     if stdout {

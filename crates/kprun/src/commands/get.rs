@@ -22,12 +22,7 @@ fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
         }
         audit_access(
             &cfg,
-            AuditRecord::new(
-                cfg.db_path.clone(),
-                vec![entry.to_string()],
-                keys.clone(),
-                None,
-            ),
+            AuditRecord::new(&cfg.db_path, vec![entry.to_string()], keys.clone(), None),
         )?;
         return Ok(());
     }
@@ -42,7 +37,7 @@ fn run(entry: &str, keys_only: bool, reveal: bool) -> Result<()> {
         }
         audit_access(
             &cfg,
-            AuditRecord::new(cfg.db_path.clone(), vec![entry.to_string()], keys, None),
+            AuditRecord::new(&cfg.db_path, vec![entry.to_string()], keys, None),
         )?;
         return Ok(());
     }
