@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+## [0.3.1] - 2026-07-07
 
-- New vaults are created with an Argon2id KDF (64 MiB memory, 3 iterations, parallelism 4) instead of the keepass-rs default Argon2d with 1 MiB memory. Existing vaults keep the parameters stored in their own file header and are not migrated.
+See [docs/changelogs/v0.3.1.md](docs/changelogs/v0.3.1.md) for details.
+
+### Fixed
+
+- **Security**: block dangerous env var families by prefix to prevent env injection (#49).
+- **Security**: resolve CodeQL code scanning alerts (#48).
+- `kprun init` now uses Argon2id with 64 MiB KDF parameters (#46).
+
+### Changed
+
+- Documentation clarified that Superpowers workflow skills are invoked manually (#47).
 
 ## [0.3.0] - 2026-07-04
 
