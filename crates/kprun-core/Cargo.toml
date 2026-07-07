@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 keepass.workspace = true
+rust-argon2.workspace = true
 keyring.workspace = true
 serde.workspace = true
 serde_json.workspace = true

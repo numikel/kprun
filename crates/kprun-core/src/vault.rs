@@ -22,6 +22,14 @@ const STANDARD_FIELDS: &[&str] = &[
     "Tags",
 ];
 
+// KDF for newly created vaults (KDBX4 stores these in the file header,
+// so existing vaults keep their own parameters).
+// Argon2id per RFC 9106; memory is in BYTES (the keepass-rs doc comment
+// saying KiB is wrong — mem_cost = memory / 1024 internally).
+const KDF_MEMORY_BYTES: u64 = 64 * 1024 * 1024; // 64 MiB
+const KDF_ITERATIONS: u64 = 3;
+const KDF_PARALLELISM: u32 = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
     ReadOnly,
@@ -74,6 +82,12 @@ pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Re
         std::fs::create_dir_all(parent)?;
     }
     let mut db = Database::new();
+    db.config.kdf_config = keepass::config::KdfConfig::Argon2id {
+        iterations: KDF_ITERATIONS,
+        memory: KDF_MEMORY_BYTES,
+        parallelism: KDF_PARALLELISM,
+        version: argon2::Version::Version13,
+    };
     db.meta.database_name = Some(db_name.to_string());
     let mut file = crate::secure_fs::create_restricted(path)?;
     db.save(&mut file, key).map_err(map_save_error)
@@ -470,5 +484,29 @@ mod tests {
         create_vault(&path, key, "kprun").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn create_vault_uses_hardened_kdf() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("kdf.kdbx");
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, "pass").unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+        // Reopen from disk: proves the parameters landed in the KDBX4 file
+        // header, not just the in-memory struct.
+        let vault = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        assert_eq!(
+            vault.database().config.kdf_config,
+            keepass::config::KdfConfig::Argon2id {
+                iterations: 3,
+                memory: 64 * 1024 * 1024,
+                parallelism: 4,
+                version: argon2::Version::Version13,
+            }
+        );
     }
 }

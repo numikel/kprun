@@ -27,6 +27,10 @@ We aim to acknowledge reports within **7 days** and will coordinate disclosure a
 
 kprun injects secrets into **child process environments**. Treat vault files (`.kdbx`), keyfiles, and audit logs as sensitive. Do not commit them to version control.
 
+### Key derivation
+
+Vaults created by `kprun init` use **Argon2id** (RFC 9106) with 64 MiB memory, 3 iterations, and parallelism 4 — chosen to stay memory-hard against GPU/ASIC offline cracking while keeping per-command unlock latency low (kprun unlocks the vault on every `kprun run`). KDBX4 stores KDF parameters in the file header, so this applies only to newly created vaults; existing vaults keep their own parameters and are never migrated. To use different parameters, change them in KeePassXC (Database → Database Security → Encryption Settings) — kprun honors whatever the file header specifies.
+
 ### File permissions
 
 Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, inheritance is removed and access is limited to the current user).
