@@ -43,6 +43,24 @@ When you run `kprun init` without `--no-store`, the KeePass master password is s
 
 Injected secrets are visible to the child process and, on many systems, to other users with sufficient privileges via `/proc/<pid>/environ`, Process Explorer, or `ps e`. Use `kprun run --clean-env` to drop the parent environment and pass only injected secrets plus a minimal safe baseline.
 
+### Injection blocklist
+
+`kprun run` refuses to inject environment variables that can subvert process
+execution or library loading, skipping them with a warning on stderr. Blocking
+is a hybrid of case-insensitive **prefix matching** for parameterized families —
+`LD_*`, `DYLD_*`, `GIT_*`, `BASH_FUNC_*` — and an **exact-match list** for
+individual names such as `PATH`, `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`,
+`PYTHONPATH`, `PYTHONHOME`, `PERL5LIB`, `PERL5OPT`, `RUBYLIB`, `RUBYOPT`,
+`JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS`, `LESSOPEN`,
+`LESSCLOSE`, `BASH_ENV`, `ENV`, and `IFS`. The `GIT_` prefix requires the
+underscore, so `GITHUB_*` variables (e.g. `GITHUB_TOKEN`) are injectable.
+
+**This blocklist is not exhaustive and cannot be.** Interpreters and tools keep
+adding execution-altering variables. For untrusted or partially trusted child
+processes, run `kprun run --clean-env`, which drops the parent environment and
+passes only injected secrets plus a minimal safe baseline — an allowlist posture
+that does not depend on the blocklist keeping up.
+
 ### Verifying releases
 
 Release `checksums.txt` is signed with minisign. Verify with:
