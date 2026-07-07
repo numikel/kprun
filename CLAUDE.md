@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Superpowers workflow
+
+The user invokes all superpowers workflow skills (brainstorming → writing-plans → executing-plans etc.) **manually**. After finishing one stage (e.g. saving an approved design spec), STOP — do not ask whether to proceed and do not auto-invoke the next skill in the chain.
+
 ## Build and development
 
 ```bash
