@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::Path;
 
 use chrono::Local;
 use serde::Serialize;
@@ -11,7 +11,9 @@ use crate::Result;
 pub struct AuditRecord {
     pub ts: String,
     pub pid: u32,
-    pub db: PathBuf,
+    /// Non-identifying vault identifier (truncated SHA-256 of the canonical
+    /// db path) — never the raw path, which would embed the OS username.
+    pub db_id: String,
     pub entries: Vec<String>,
     pub injected_keys: Vec<String>,
     pub command: Option<String>,
@@ -19,7 +21,7 @@ pub struct AuditRecord {
 
 impl AuditRecord {
     pub fn new(
-        db: PathBuf,
+        db_path: &Path,
         entries: Vec<String>,
         injected_keys: Vec<String>,
         command: Option<String>,
@@ -27,7 +29,7 @@ impl AuditRecord {
         Self {
             ts: Local::now().format("%Y-%m-%dT%H:%M:%S%z").to_string(),
             pid: std::process::id(),
-            db,
+            db_id: crate::unlock::vault_id(db_path),
             entries,
             injected_keys,
             command,
@@ -47,7 +49,7 @@ pub fn log_access(cfg: &Config, record: &AuditRecord) -> Result<()> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use std::path::PathBuf;
+    use std::path::Path;
     use tempfile::tempdir;
 
     #[test]
@@ -58,7 +60,7 @@ mod tests {
         log_access(
             &cfg,
             &AuditRecord::new(
-                PathBuf::from("/db.kdbx"),
+                Path::new("/db.kdbx"),
                 vec!["openai".into()],
                 vec!["OPENAI_API_KEY".into()],
                 Some("python".into()),
@@ -80,7 +82,7 @@ mod tests {
         log_access(
             &cfg,
             &AuditRecord::new(
-                PathBuf::from("/db.kdbx"),
+                Path::new("/db.kdbx"),
                 vec!["x".into()],
                 vec!["K".into()],
                 None,
@@ -89,5 +91,43 @@ mod tests {
         .unwrap();
         let mode = std::fs::metadata(&log).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn record_contains_db_id_not_path() {
+        let dir = tempdir().unwrap();
+        let log = dir.path().join("access.log");
+        let db = dir.path().join("secrets.kdbx");
+        let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
+        log_access(
+            &cfg,
+            &AuditRecord::new(
+                &db,
+                vec!["openai".into()],
+                vec!["OPENAI_API_KEY".into()],
+                None,
+            ),
+        )
+        .unwrap();
+        let content = std::fs::read_to_string(log).unwrap();
+        let record: serde_json::Value =
+            serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        let db_id = record["db_id"].as_str().unwrap();
+        assert_eq!(db_id.len(), 16);
+        assert!(db_id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(db_id, crate::unlock::vault_id(&db));
+        assert!(record.get("db").is_none());
+        // No component of the real filesystem path (and thus no OS username)
+        // may appear anywhere in the line.
+        let db_str = db.to_string_lossy();
+        assert!(!content.contains(&*db_str));
+    }
+
+    #[test]
+    fn same_path_yields_same_db_id() {
+        let p = std::path::Path::new("/db.kdbx");
+        let a = AuditRecord::new(p, vec![], vec![], None);
+        let b = AuditRecord::new(p, vec![], vec![], None);
+        assert_eq!(a.db_id, b.db_id);
     }
 }
