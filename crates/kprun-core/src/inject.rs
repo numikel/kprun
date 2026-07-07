@@ -14,21 +14,32 @@ fn collision_warning_message(key: &str, entry: &str) -> String {
     format!("warning: key '{key}' from entry '{entry}' overrides an earlier value")
 }
 
+/// Case-insensitive prefixes of environment variable families that can subvert
+/// process execution (dynamic loaders, git exec hooks, exported bash functions).
+/// These families are parameterized (`GIT_CONFIG_KEY_0..n`, `BASH_FUNC_<name>%%`),
+/// so exact-match listing cannot cover them.
+const DANGEROUS_ENV_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_", "BASH_FUNC_"];
+
 /// Environment variable names that can subvert process execution or library loading.
 /// Injecting these from a vault is refused (skipped with a warning).
+/// Names covered by `DANGEROUS_ENV_PREFIXES` are intentionally absent.
 const DANGEROUS_ENV: &[&str] = &[
     "PATH",
-    "LD_PRELOAD",
-    "LD_LIBRARY_PATH",
-    "LD_AUDIT",
-    "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH",
-    "DYLD_FRAMEWORK_PATH",
     "NODE_OPTIONS",
+    "NODE_EXTRA_CA_CERTS",
     "PYTHONPATH",
     "PYTHONSTARTUP",
-    "GIT_SSH",
-    "GIT_SSH_COMMAND",
+    "PYTHONHOME",
+    "PYTHONINSPECT",
+    "PERL5LIB",
+    "PERL5OPT",
+    "RUBYLIB",
+    "RUBYOPT",
+    "JAVA_TOOL_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "_JAVA_OPTIONS",
+    "LESSOPEN",
+    "LESSCLOSE",
     "BASH_ENV",
     "ENV",
     "IFS",
@@ -36,6 +47,10 @@ const DANGEROUS_ENV: &[&str] = &[
 
 fn is_dangerous_env(key: &str) -> bool {
     DANGEROUS_ENV.iter().any(|d| d.eq_ignore_ascii_case(key))
+        || DANGEROUS_ENV_PREFIXES.iter().any(|p| {
+            key.get(..p.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(p))
+        })
 }
 
 fn dangerous_skip_message(key: &str, entry: &str) -> String {
@@ -127,6 +142,98 @@ mod tests {
         assert!(!result.env.contains_key("PATH"));
         assert_eq!(result.env.get("SAFE_KEY").map(String::as_str), Some("ok"));
         assert!(!result.injected_keys.iter().any(|k| k == "PATH"));
+    }
+
+    #[test]
+    fn skips_extended_dangerous_env_names_and_prefixes() {
+        use keepass::Database;
+        // Every newly blocked exact name plus one representative per prefix
+        // family (including a lowercase variant for case-insensitivity).
+        const BLOCKED: &[&str] = &[
+            // new exact names
+            "NODE_EXTRA_CA_CERTS",
+            "PYTHONHOME",
+            "PYTHONINSPECT",
+            "PERL5LIB",
+            "PERL5OPT",
+            "RUBYLIB",
+            "RUBYOPT",
+            "JAVA_TOOL_OPTIONS",
+            "JDK_JAVA_OPTIONS",
+            "_JAVA_OPTIONS",
+            "LESSOPEN",
+            "LESSCLOSE",
+            // prefix families
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_EXTERNAL_DIFF",
+            "GIT_PROXY_COMMAND",
+            "GIT_PAGER",
+            "BASH_FUNC_foo%%",
+            "DYLD_FALLBACK_LIBRARY_PATH",
+            "DYLD_VERSIONED_LIBRARY_PATH",
+            "LD_AUDIT",
+            // case-insensitivity through the prefix path
+            "ld_preload",
+        ];
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("danger-ext.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "svc");
+            for key in BLOCKED {
+                e.set_unprotected(*key, "evil");
+            }
+            e.set_unprotected("SAFE_KEY", "ok");
+        });
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
+        let mut file = std::fs::File::create(&db_path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
+        let result = resolve_injection(&vault, &["svc".into()]).unwrap();
+        for key in BLOCKED {
+            assert!(!result.env.contains_key(*key), "{key} must be blocked");
+            assert!(
+                !result.injected_keys.iter().any(|k| k == key),
+                "{key} must not be reported as injected"
+            );
+        }
+        assert_eq!(result.env.get("SAFE_KEY").map(String::as_str), Some("ok"));
+        assert_eq!(result.injected_keys, vec!["SAFE_KEY".to_string()]);
+    }
+
+    #[test]
+    fn github_prefixed_names_are_not_blocked() {
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("github.kdbx");
+        let mut db = Database::new();
+        db.root_mut().add_entry().edit(|e| {
+            e.set_unprotected(fields::TITLE, "svc");
+            e.set_unprotected("GITHUB_TOKEN", "ghp_test");
+        });
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
+        let mut file = std::fs::File::create(&db_path).unwrap();
+        db.save(&mut file, key.clone()).unwrap();
+
+        let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
+        let result = resolve_injection(&vault, &["svc".into()]).unwrap();
+        // GIT_ prefix requires the underscore: GITHUB_* must pass through.
+        assert_eq!(
+            result.env.get("GITHUB_TOKEN").map(String::as_str),
+            Some("ghp_test")
+        );
+        assert_eq!(result.injected_keys, vec!["GITHUB_TOKEN".to_string()]);
     }
 
     #[test]
