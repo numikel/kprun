@@ -64,11 +64,22 @@ impl MasterPasswordSource for FixedUnlock {
 /// Derive a stable, per-vault keychain account name from the database path,
 /// so different vaults never overwrite each other's stored master password.
 fn keychain_account(db_path: &Path) -> String {
+    format!("master:{}", path_digest_hex(db_path))
+}
+
+/// Full lowercase-hex SHA-256 of the canonicalized db path (raw path on
+/// canonicalize failure). Shared by the keyring account name and `vault_id`.
+fn path_digest_hex(db_path: &Path) -> String {
     use sha2::{Digest, Sha256};
     let canonical = std::fs::canonicalize(db_path).unwrap_or_else(|_| db_path.to_path_buf());
     let digest = Sha256::digest(canonical.to_string_lossy().as_bytes());
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    format!("master:{hex}")
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Stable, non-identifying vault identifier for the audit log: the first 16
+/// hex chars of the same digest the OS keyring account name uses.
+pub fn vault_id(db_path: &Path) -> String {
+    path_digest_hex(db_path)[..16].to_string()
 }
 
 pub fn unlock_master(
@@ -201,6 +212,28 @@ mod tests {
         let b = keychain_account(Path::new("b.kdbx"));
         assert_ne!(a, b);
         assert!(a.starts_with("master:"));
+    }
+
+    #[test]
+    fn vault_id_is_16_lowercase_hex_and_stable() {
+        let id1 = vault_id(Path::new("a.kdbx"));
+        let id2 = vault_id(Path::new("a.kdbx"));
+        assert_eq!(id1, id2);
+        assert_eq!(id1.len(), 16);
+        assert!(id1
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_ne!(id1, vault_id(Path::new("b.kdbx")));
+    }
+
+    #[test]
+    fn vault_id_matches_keychain_account_digest() {
+        // Same vault must present the same identity in keyring and audit log.
+        let p = Path::new("a.kdbx");
+        let account = keychain_account(p);
+        assert!(account.starts_with("master:"));
+        assert_eq!(account.len(), "master:".len() + 64);
+        assert!(account["master:".len()..].starts_with(&vault_id(p)));
     }
 
     #[cfg(unix)]
