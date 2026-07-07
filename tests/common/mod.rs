@@ -6,6 +6,7 @@ pub mod mcp_mock;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use kprun_core::test_support;
 use kprun_core::unlock::{build_database_key, UnlockContext};
 use kprun_core::vault::{create_vault, open_vault, OpenMode};
 
@@ -35,7 +36,7 @@ pub fn kprun_cmd() -> Command {
 pub fn test_env(db: &Path) -> [(&str, &str); 2] {
     [
         ("KPRUN_DB", db.to_str().unwrap()),
-        ("KPRUN_TEST_MASTER", "pass"),
+        ("KPRUN_TEST_MASTER", test_support::vault_password()),
     ]
 }
 
@@ -45,7 +46,7 @@ pub fn create_vault_with_entries(db: &Path, entries: &[(&str, &[(&str, &str)])])
         keyfile: None,
         db_path: db.to_path_buf(),
     };
-    let key = build_database_key(&ctx, "pass").unwrap();
+    let key = build_database_key(&ctx, test_support::vault_password()).unwrap();
     create_vault(db, key.clone(), "kprun").unwrap();
     let mut vault = open_vault(db, key.clone(), OpenMode::ReadWrite).unwrap();
     for (title, pairs) in entries {

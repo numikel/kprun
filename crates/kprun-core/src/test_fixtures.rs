@@ -7,9 +7,16 @@ use keepass::db::fields;
 use keepass::Database;
 
 #[cfg(test)]
+use crate::test_support;
+#[cfg(test)]
 use crate::unlock::{build_database_key, UnlockContext};
 #[cfg(test)]
 use crate::{KprunError, Result};
+
+#[cfg(test)]
+pub(crate) fn test_vault_password() -> &'static str {
+    test_support::vault_password()
+}
 
 #[cfg(test)]
 pub(crate) fn create_test_vault(path: &Path, password: &str) -> Result<()> {

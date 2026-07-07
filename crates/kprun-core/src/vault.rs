@@ -271,7 +271,7 @@ fn prepare_for_save(db: &mut Database) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::create_test_vault;
+    use crate::test_fixtures::{create_test_vault, test_vault_password};
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::KprunError;
     use keepass::db::fields;
@@ -281,12 +281,12 @@ mod tests {
     fn find_entry_by_title_case_insensitive() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
-        create_test_vault(&db_path, "pass").unwrap();
+        create_test_vault(&db_path, test_vault_password()).unwrap();
         let ctx = UnlockContext {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let id = vault.find_entry_by_title("GitHub").unwrap();
         let keys = vault.entry_custom_keys(id);
@@ -301,7 +301,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -327,7 +327,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -351,7 +351,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadOnly).unwrap();
@@ -372,7 +372,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -405,7 +405,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -428,7 +428,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
@@ -461,7 +461,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&path).unwrap();
         db.save(&mut file, key.clone()).unwrap();
 
@@ -480,7 +480,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key, "kprun").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
@@ -494,7 +494,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
         // Reopen from disk: proves the parameters landed in the KDBX4 file
         // header, not just the in-memory struct.
