@@ -71,7 +71,7 @@ pub fn resolve_injection(vault: &Vault, entry_names: &[String]) -> Result<Inject
 #[cfg(test)]
 mod tests {
     use super::{collision_warning_message, resolve_injection};
-    use crate::test_fixtures::create_multi_entry_test_vault;
+    use crate::test_fixtures::{create_multi_entry_test_vault, test_vault_password};
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::vault::{open_vault, OpenMode};
     use keepass::db::fields;
@@ -82,12 +82,12 @@ mod tests {
     fn merges_multiple_entries() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.kdbx");
-        create_multi_entry_test_vault(&db_path, "pass").unwrap();
+        create_multi_entry_test_vault(&db_path, test_vault_password()).unwrap();
         let ctx = UnlockContext {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let names = vec!["openai".into(), "postgres".into()];
         let result = resolve_injection(&vault, &names).unwrap();
@@ -118,7 +118,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
         db.save(&mut file, key.clone()).unwrap();
 
@@ -147,7 +147,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
         db.save(&mut file, key.clone()).unwrap();
 

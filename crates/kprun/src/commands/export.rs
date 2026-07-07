@@ -131,6 +131,7 @@ fn export_dotenv(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kprun_core::test_support;
     use kprun_core::unlock::{build_database_key, UnlockContext};
     use kprun_core::vault::{create_vault, open_vault, OpenMode};
     use std::path::PathBuf;
@@ -144,7 +145,7 @@ mod tests {
             keyfile: None,
             db_path: PathBuf::from("test.kdbx"),
         };
-        let key = build_database_key(&ctx, "pass").unwrap();
+        let key = build_database_key(&ctx, test_support::vault_password()).unwrap();
         create_vault(&path, key.clone(), "kprun").unwrap();
         let mut v = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
         v.set_attributes("svc", &[("MULTI".into(), "line1\nline2".into())])

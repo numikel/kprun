@@ -2,6 +2,7 @@ mod common;
 
 use std::path::Path;
 
+use kprun_core::test_support;
 use kprun_core::unlock::{build_database_key, UnlockContext};
 use kprun_core::vault::create_vault;
 use serde_json::Value;
@@ -278,7 +279,7 @@ fn import_dotenv_roundtrip() {
         keyfile: None,
         db_path: db.to_path_buf(),
     };
-    let key = build_database_key(&ctx, "pass").unwrap();
+    let key = build_database_key(&ctx, test_support::vault_password()).unwrap();
     create_vault(&import_db, key, "kprun").unwrap();
 
     kprun_cmd()
@@ -305,7 +306,7 @@ fn import_dotenv_trims_value_whitespace() {
         keyfile: None,
         db_path: db.to_path_buf(),
     };
-    let key = build_database_key(&ctx, "pass").unwrap();
+    let key = build_database_key(&ctx, test_support::vault_password()).unwrap();
     create_vault(&db, key, "kprun").unwrap();
 
     std::fs::write(&import_file, "# trimtest\nTRIM_KEY= value \n").unwrap();

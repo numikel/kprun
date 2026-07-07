@@ -2,6 +2,7 @@ mod common;
 
 use std::path::Path;
 
+use kprun_core::test_support;
 use kprun_core::unlock::{build_database_key, UnlockContext};
 use kprun_core::vault::create_vault;
 use predicates::prelude::PredicateBooleanExt;
@@ -85,7 +86,7 @@ fn set_unset_delete_roundtrip() {
         keyfile: None,
         db_path: db.to_path_buf(),
     };
-    let key = build_database_key(&ctx, "pass").unwrap();
+    let key = build_database_key(&ctx, test_support::vault_password()).unwrap();
     create_vault(&db, key, "kprun").unwrap();
 
     let env = test_env(&db);
