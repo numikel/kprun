@@ -53,7 +53,7 @@ Unlock priority: `KPRUN_KEYFILE` → OS keystore (`kprun` / `master`) → hidden
 - ✅ **Per-process injection** — `kprun run` opens the vault read-only and spawns one child with merged env
 - ✅ **MCP-safe stdio** — `run` prints nothing on stdout; child owns stdin/stdout/stderr
 - ✅ **Full secret lifecycle** — `init`, `set`, `get`, `unset`, `delete`, `export`, `import`, `doctor`
-- ✅ **Audit log** — JSON lines with entry names and injected key names; **never values**
+- ✅ **Audit log** — JSON lines with entry names and injected key names; **never values, never the vault path**
 - ✅ **Cross-platform** — Linux, macOS, Windows (PATHEXT-aware spawn, keyring v1)
 - ✅ **RTK-style install** — `install.sh` / `install.ps1` with SHA-256 checksum verify
 - ✅ **CI matrix** — fmt, clippy, tests on ubuntu/windows/macos; release assets on tag `v*`
@@ -310,7 +310,7 @@ One OpenRouter key can power every tool above; generate it at [openrouter.ai/set
 |----------|---------|-------------|
 | `KPRUN_DB` | `~/.kprun/secrets.kdbx` | Path to the KeePass database |
 | `KPRUN_KEYFILE` | — | Path to a cryptographic key file (second factor) |
-| `KPRUN_LOG` | `~/.kprun/access.log` | Audit log path (JSON lines, key names only) |
+| `KPRUN_LOG` | `~/.kprun/access.log` | Audit log path (JSON lines; see [Audit log format](#audit-log-format)) |
 | `KPRUN_INSTALL_DIR` | `~/.local/bin` / `%LOCALAPPDATA%\kprun\bin` | Install script target |
 | `KPRUN_NO_MODIFY_PATH` | unset | Set to `1` to skip shell PATH updates |
 | `KPRUN_SKIP_CHECKSUM` | unset | Set to `1` to skip install checksum verify |
@@ -533,10 +533,29 @@ cargo test --all-features
 - Use a dedicated **dev-secrets** vault, not your personal password manager.
 - Report vulnerabilities per [SECURITY.md](SECURITY.md) (**contact@michalsk.pl**); do not file public issues for security bugs.
 - Secrets exist in the **child process environment** after injection (same model as other secret runners).
-- Audit log records entry names and injected key names — **never values**.
+- Audit log records entry names, injected key names, and a non-identifying vault id — **never values, never the vault path** (see [Audit log format](#audit-log-format)).
 - Do not use `setx` or global shell profiles for API keys.
 - Pass only the entries a command needs: `kprun run openai -- python script.py`, not every secret at once.
 - `export --reveal` and `get --reveal` print values to the terminal — use deliberately.
+
+### Audit log format
+
+Every audit record is one JSON line with exactly these fields:
+
+| Field | Contents |
+|-------|----------|
+| `ts` | Local timestamp, `%Y-%m-%dT%H:%M:%S%z` |
+| `pid` | Process id of the kprun invocation |
+| `db_id` | Non-identifying vault id: first 16 hex chars of the SHA-256 of the canonicalized db path (same digest the OS keyring account uses). The raw path — which would embed your OS username — is never logged. |
+| `entries` | Vault entry titles accessed |
+| `injected_keys` | Env var / header **names** injected (never values) |
+| `command` | Child command name (`run`), `mcp <host>` (URL host only), or `null` |
+
+```json
+{"ts":"2026-07-08T14:03:11+0100","pid":4242,"db_id":"9f2b4c1a8e3d5f07","entries":["openai"],"injected_keys":["OPENAI_API_KEY"],"command":"python"}
+```
+
+Prior to v0.3.2 the record carried a `db` field with the full vault path; lines written by older versions are left untouched — rotate or delete old logs if that matters to you.
 
 ## Releases
 
