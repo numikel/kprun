@@ -5,7 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-08
+
+See [docs/changelogs/v0.4.0.md](docs/changelogs/v0.4.0.md) for details.
+
+### Added
+
+- Core `vault_id` utility for stable, non-identifying vault digest.
+
+### Security
+
+- Audit log replaces vault path with `db_id` (SHA-256 digest). Hardens MCP transport and Windows ACL enforcement.
 
 ## [0.3.1] - 2026-07-07
 
