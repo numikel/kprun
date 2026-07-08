@@ -70,6 +70,21 @@ fn mcp_inner(
     // Resolve everything before touching the network — an unknown field
     // must fail fast, before any request or audit record.
     let resolved_url = template::substitute(&url, &fields)?;
+
+    // Validate the resolved URL before ureq can see it: ureq's BadUri error
+    // echoes the full URI, and the resolved query string may contain
+    // substituted secrets. On failure cite only the user-typed template.
+    let parsed: ureq::http::Uri = resolved_url.parse().map_err(|_| {
+        KprunError::Other(format!(
+            "invalid URL after substitution (template: '{url}')"
+        ))
+    })?;
+    if parsed.scheme_str().is_none() || parsed.host().is_none() {
+        return Err(KprunError::Other(format!(
+            "URL must be absolute with scheme and host (template: '{url}')"
+        )));
+    }
+
     let mut resolved_headers: Vec<(String, String)> = Vec::new();
     for (name, tpl) in &templates {
         resolved_headers.push((name.clone(), template::substitute(tpl, &fields)?));

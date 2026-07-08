@@ -751,3 +751,59 @@ fn explicit_transport_sse_skips_streamable_probe() {
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests[0].method, "GET"); // no streamable POST probe
 }
+
+#[test]
+fn transport_error_never_prints_substituted_url_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // Reserve a port, then drop the listener: connecting is refused, which
+    // provokes a transport error after {{TOKEN}} was substituted into the URL.
+    let port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    };
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            &format!("http://127.0.0.1:{port}/mcp/?key={{{{TOKEN}}}}"),
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("github_pat_test"),
+        "substituted secret leaked to stderr: {stderr}"
+    );
+}
+
+#[test]
+fn invalid_resolved_url_error_cites_template_not_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // "{{TOKEN}}" alone resolves to "github_pat_test" — not a valid absolute
+    // URL. The error must cite the template, never the resolved value.
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(["mcp", "-e", "github", "{{TOKEN}}"])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("");
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("github_pat_test"),
+        "secret on stderr: {stderr}"
+    );
+    assert!(stderr.contains("{{TOKEN}}"), "template not cited: {stderr}");
+}
