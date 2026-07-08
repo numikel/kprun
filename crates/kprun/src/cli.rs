@@ -65,6 +65,9 @@ pub enum Commands {
         entry: String,
         /// KEY=value pairs to set on the entry
         pairs: Vec<String>,
+        /// Read KEY=value lines from stdin (avoids argv / shell-history exposure)
+        #[arg(long, conflicts_with = "pairs")]
+        stdin: bool,
     },
     /// Remove secret fields from a vault entry
     Unset {
@@ -243,5 +246,12 @@ mod tests {
     fn mcp_requires_entry_and_url() {
         assert!(Cli::try_parse_from(["kprun", "mcp", "https://x.test/"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "mcp", "-e", "gh"]).is_err());
+    }
+
+    #[test]
+    fn set_stdin_conflicts_with_pairs() {
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1", "--stdin"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "--stdin"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1"]).is_ok());
     }
 }

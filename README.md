@@ -326,7 +326,7 @@ kprun init   [--db PATH] [--no-store] [--keyfile PATH]
 kprun run    <entry> [entry2 ...] -- <command> [args...]
 kprun list   [--json]
 kprun get    <entry> [--keys] [--reveal]
-kprun set    <entry> KEY=val [KEY2=val2 ...]
+kprun set    <entry> KEY=val [KEY2=val2 ...] | --stdin
 kprun unset  <entry> KEY [KEY2 ...]
 kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
@@ -539,6 +539,13 @@ cargo test --all-features
 - Do not use `setx` or global shell profiles for API keys.
 - Pass only the entries a command needs: `kprun run openai -- python script.py`, not every secret at once.
 - `export --reveal` and `get --reveal` print values to the terminal — use deliberately.
+- Inline `kprun set <entry> KEY=value` puts the secret in your **shell history** and in **process listings** (`ps`, Task Manager) while the command runs. For sensitive values prefer `kprun set <entry> --stdin` and type or pipe `KEY=value` lines (blank lines and `#` comments are skipped):
+
+  ```bash
+  kprun set github --stdin <<'EOF'
+  GITHUB_TOKEN=ghp_xxx
+  EOF
+  ```
 
 ### Audit log format
 

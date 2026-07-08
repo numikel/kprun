@@ -37,7 +37,11 @@ pub fn dispatch(command: Commands) {
             keys,
             reveal,
         } => std::process::exit(get::execute(entry, keys, reveal)),
-        Commands::Set { entry, pairs } => std::process::exit(set::execute(entry, pairs)),
+        Commands::Set {
+            entry,
+            pairs,
+            stdin,
+        } => std::process::exit(set::execute(entry, pairs, stdin)),
         Commands::Unset { entry, keys } => std::process::exit(unset::execute(entry, keys)),
         Commands::Delete { entry } => std::process::exit(delete::execute(entry)),
         Commands::Export {
