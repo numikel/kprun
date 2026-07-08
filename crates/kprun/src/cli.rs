@@ -132,6 +132,9 @@ pub enum Commands {
         /// Per-request timeout in seconds (SSE streams are exempt)
         #[arg(long, default_value_t = 30)]
         timeout: u64,
+        /// Allow vault-backed credentials over plaintext http:// to a non-loopback host
+        #[arg(long)]
+        allow_insecure_http: bool,
         /// Remote MCP endpoint URL (supports {{FIELD}} substitution)
         url: String,
     },
@@ -187,6 +190,7 @@ mod tests {
                 bearer,
                 transport,
                 timeout,
+                allow_insecure_http,
                 url,
             } => {
                 assert_eq!(entry, "github");
@@ -194,8 +198,29 @@ mod tests {
                 assert_eq!(bearer.as_deref(), Some("TOKEN"));
                 assert!(matches!(transport, McpTransport::StreamableHttp));
                 assert_eq!(timeout, 10);
+                assert!(!allow_insecure_http);
                 assert_eq!(url, "https://api.example.com/mcp/");
             }
+            _ => panic!("expected Commands::Mcp"),
+        }
+    }
+
+    #[test]
+    fn mcp_parses_allow_insecure_http() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "mcp",
+            "-e",
+            "gh",
+            "--allow-insecure-http",
+            "http://intranet.local/mcp/",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Mcp {
+                allow_insecure_http,
+                ..
+            } => assert!(allow_insecure_http),
             _ => panic!("expected Commands::Mcp"),
         }
     }

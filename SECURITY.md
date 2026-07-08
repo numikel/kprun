@@ -52,6 +52,15 @@ When you run `kprun init` without `--no-store`, the KeePass master password is s
 
 Injected secrets are visible to the child process and, on many systems, to other users with sufficient privileges via `/proc/<pid>/environ`, Process Explorer, or `ps e`. Use `kprun run --clean-env` to drop the parent environment and pass only injected secrets plus a minimal safe baseline.
 
+### Plaintext HTTP policy (`kprun mcp`)
+
+`kprun mcp` refuses to start when the resolved URL uses `http://` on a
+non-loopback host while credentials are present (`--bearer`, any `--header`,
+or a `{{FIELD}}` substitution in the URL): plaintext transport exposes them
+to any network observer. Loopback (`127.0.0.0/8`, `::1`, `localhost`) is
+exempt for local development. `--allow-insecure-http` overrides the refusal
+for deliberately trusted network paths.
+
 ### Injection blocklist
 
 `kprun run` refuses to inject environment variables that can subvert process

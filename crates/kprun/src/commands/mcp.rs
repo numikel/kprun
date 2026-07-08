@@ -16,9 +16,18 @@ pub fn execute(
     bearer: Option<String>,
     transport: McpTransport,
     timeout: u64,
+    allow_insecure_http: bool,
     url: String,
 ) -> i32 {
-    match mcp_inner(entry, headers, bearer, transport, timeout, url) {
+    match mcp_inner(
+        entry,
+        headers,
+        bearer,
+        transport,
+        timeout,
+        allow_insecure_http,
+        url,
+    ) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e}");
@@ -33,6 +42,7 @@ fn mcp_inner(
     bearer: Option<String>,
     transport: McpTransport,
     timeout: u64,
+    allow_insecure_http: bool,
     url: String,
 ) -> Result<i32> {
     let cfg = Config::from_env();
@@ -85,6 +95,27 @@ fn mcp_inner(
         )));
     }
 
+    // Refuse plaintext credentials to a non-loopback host. A `{{` in the
+    // user-typed URL template means at least one vault field was substituted
+    // into the URL (substitute() already succeeded), which is the same
+    // exposure as a secret header.
+    let has_secret_material = bearer.is_some() || !headers.is_empty() || url.contains("{{");
+    let is_http = parsed
+        .scheme_str()
+        .is_some_and(|s| s.eq_ignore_ascii_case("http"));
+    if is_http
+        && has_secret_material
+        && !is_loopback_host(&host_of(&resolved_url))
+        && !allow_insecure_http
+    {
+        return Err(KprunError::Other(format!(
+            "refusing to send vault-backed credentials over plaintext http:// \
+             to non-loopback host '{}'; use https:// or pass \
+             --allow-insecure-http to accept the risk",
+            host_of(&resolved_url)
+        )));
+    }
+
     let mut resolved_headers: Vec<(String, String)> = Vec::new();
     for (name, tpl) in &templates {
         resolved_headers.push((name.clone(), template::substitute(tpl, &fields)?));
@@ -120,9 +151,27 @@ fn host_of(url: &str) -> String {
     rest.split(['/', '?']).next().unwrap_or("").to_string()
 }
 
+/// Loopback per the design: 127.0.0.0/8, ::1 (bracketed or not), and
+/// `localhost` (case-insensitive), with any `:port` suffix stripped.
+fn is_loopback_host(host: &str) -> bool {
+    // Bare IP without port (covers unbracketed `::1`).
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    let bare = match host.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(rest),
+        None => host.rsplit_once(':').map_or(host, |(h, _)| h),
+    };
+    if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    bare.eq_ignore_ascii_case("localhost")
+}
+
 #[cfg(test)]
 mod tests {
     use super::host_of;
+    use super::is_loopback_host;
 
     #[test]
     fn host_of_strips_path_and_query() {
@@ -132,5 +181,26 @@ mod tests {
         );
         assert_eq!(host_of("http://127.0.0.1:8080/x"), "127.0.0.1:8080");
         assert_eq!(host_of("no-scheme/path"), "no-scheme");
+    }
+
+    #[test]
+    fn loopback_hosts_are_recognized() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("127.0.0.1:8080"));
+        assert!(is_loopback_host("127.255.0.7"));
+        assert!(is_loopback_host("::1"));
+        assert!(is_loopback_host("[::1]"));
+        assert!(is_loopback_host("[::1]:8080"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("LOCALHOST:3000"));
+    }
+
+    #[test]
+    fn non_loopback_hosts_are_rejected() {
+        assert!(!is_loopback_host("api.example.com"));
+        assert!(!is_loopback_host("localhost.evil"));
+        assert!(!is_loopback_host("128.0.0.1"));
+        assert!(!is_loopback_host("[2001:db8::1]:443"));
+        assert!(!is_loopback_host(""));
     }
 }

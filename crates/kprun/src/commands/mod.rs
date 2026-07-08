@@ -54,9 +54,16 @@ pub fn dispatch(command: Commands) {
             bearer,
             transport,
             timeout,
+            allow_insecure_http,
             url,
         } => std::process::exit(mcp::execute(
-            entry, headers, bearer, transport, timeout, url,
+            entry,
+            headers,
+            bearer,
+            transport,
+            timeout,
+            allow_insecure_http,
+            url,
         )),
         Commands::Deinit => std::process::exit(deinit::execute()),
     }
