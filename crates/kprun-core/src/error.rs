@@ -30,7 +30,7 @@ pub enum KprunError {
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
-    Keepass(#[from] keepass::error::DatabaseOpenError),
+    Keepass(String),
     #[error("{0}")]
     Keyring(#[from] keyring::v1::Error),
     #[error("{0}")]

@@ -5,6 +5,7 @@ use keepass::DatabaseKey;
 use keyring::v1::Entry;
 use zeroize::Zeroizing;
 
+use crate::vault::VaultKey;
 use crate::{KprunError, Result};
 
 const SERVICE: &str = "kprun";
@@ -113,7 +114,7 @@ pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
 /// Unlock without any TTY interaction (for `kprun mcp`, where stdin carries
 /// JSON-RPC frames and no terminal is attached). Order: test hook (feature
 /// gated) → OS keyring → keyfile-only key. Never prompts.
-pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<DatabaseKey> {
+pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<VaultKey> {
     #[cfg(feature = "test-hooks")]
     if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
         return build_database_key(ctx, &pw);
@@ -130,6 +131,7 @@ pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<DatabaseKey> {
                 let mut file = File::open(path)?;
                 DatabaseKey::new()
                     .with_keyfile(&mut file)
+                    .map(VaultKey::new)
                     .map_err(|e| KprunError::Other(e.to_string()))
             }
             None => Err(KprunError::NonInteractiveUnlock),
@@ -138,7 +140,7 @@ pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<DatabaseKey> {
     }
 }
 
-pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<DatabaseKey> {
+pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<VaultKey> {
     let mut key = DatabaseKey::new().with_password(master);
     if let Some(path) = &ctx.keyfile {
         let mut file = File::open(path)?;
@@ -146,7 +148,7 @@ pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<DatabaseK
             .with_keyfile(&mut file)
             .map_err(|e| KprunError::Other(e.to_string()))?;
     }
-    Ok(key)
+    Ok(VaultKey::new(key))
 }
 
 pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
@@ -259,7 +261,7 @@ mod tests {
 
         let mut file = File::open(&kf).unwrap();
         let key = DatabaseKey::new().with_keyfile(&mut file).unwrap();
-        crate::vault::create_vault(&db, key, "kprun").unwrap();
+        crate::vault::create_vault(&db, VaultKey::new(key), "kprun").unwrap();
 
         let ctx = UnlockContext {
             keyfile: Some(kf),

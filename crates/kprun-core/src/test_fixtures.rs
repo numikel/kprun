@@ -31,7 +31,7 @@ pub(crate) fn create_test_vault(path: &Path, password: &str) -> Result<()> {
     };
     let key = build_database_key(&ctx, password)?;
     let mut file = std::fs::File::create(path)?;
-    db.save(&mut file, key)
+    db.save(&mut file, key.into_inner())
         .map_err(|e| KprunError::Other(e.to_string()))
 }
 
@@ -52,6 +52,6 @@ pub(crate) fn create_multi_entry_test_vault(path: &Path, password: &str) -> Resu
     };
     let key = build_database_key(&ctx, password)?;
     let mut file = std::fs::File::create(path)?;
-    db.save(&mut file, key)
+    db.save(&mut file, key.into_inner())
         .map_err(|e| KprunError::Other(e.to_string()))
 }

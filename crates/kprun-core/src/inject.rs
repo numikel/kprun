@@ -135,7 +135,7 @@ mod tests {
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone()).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -193,7 +193,7 @@ mod tests {
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone()).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -224,7 +224,7 @@ mod tests {
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone()).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -256,7 +256,7 @@ mod tests {
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone()).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let names = vec!["entry_a".into(), "entry_b".into()];

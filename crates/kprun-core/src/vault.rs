@@ -3,11 +3,32 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use keepass::db::{fields, EntryId, EntryRef};
-use keepass::Database;
-
-pub use keepass::DatabaseKey;
+use keepass::{Database, DatabaseKey};
 
 use crate::{KprunError, Result};
+
+/// Owned wrapper around the third-party key material so `keepass::DatabaseKey`
+/// never appears in `kprun-core`'s public API. Built via
+/// `unlock::build_database_key` / `unlock::unlock_noninteractive`.
+#[derive(Debug, Clone)]
+pub struct VaultKey(DatabaseKey);
+
+impl VaultKey {
+    pub(crate) fn new(inner: DatabaseKey) -> Self {
+        Self(inner)
+    }
+
+    pub(crate) fn into_inner(self) -> DatabaseKey {
+        self.0
+    }
+}
+
+/// Opaque handle to an entry inside a `Vault`. Cannot be constructed or
+/// inspected from outside `kprun-core`; obtained only via
+/// `Vault::find_entry_by_title` and fed back into `entry_custom_keys` /
+/// `entry_custom_values`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryHandle(EntryId);
 
 const STANDARD_FIELDS: &[&str] = &[
     "Title",
@@ -52,18 +73,15 @@ impl Vault {
     pub fn path(&self) -> &Path {
         &self.path
     }
-
-    pub fn database(&self) -> &Database {
-        &self.db
-    }
 }
 
-pub fn open_vault(path: &Path, key: keepass::DatabaseKey, mode: OpenMode) -> Result<Vault> {
+pub fn open_vault(path: &Path, key: VaultKey, mode: OpenMode) -> Result<Vault> {
     if !path.exists() {
         return Err(KprunError::DatabaseNotFound(path.to_path_buf()));
     }
     let mut file = File::open(path)?;
-    let db = Database::open(&mut file, key)?;
+    let db = Database::open(&mut file, key.into_inner())
+        .map_err(|e| KprunError::Keepass(e.to_string()))?;
     Ok(Vault {
         db,
         path: path.to_path_buf(),
@@ -71,7 +89,7 @@ pub fn open_vault(path: &Path, key: keepass::DatabaseKey, mode: OpenMode) -> Res
     })
 }
 
-pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Result<()> {
+pub fn create_vault(path: &Path, key: VaultKey, db_name: &str) -> Result<()> {
     if path.exists() {
         return Err(KprunError::Other(format!(
             "database already exists: {}",
@@ -90,7 +108,7 @@ pub fn create_vault(path: &Path, key: keepass::DatabaseKey, db_name: &str) -> Re
     };
     db.meta.database_name = Some(db_name.to_string());
     let mut file = crate::secure_fs::create_restricted(path)?;
-    db.save(&mut file, key).map_err(map_save_error)
+    db.save(&mut file, key.into_inner()).map_err(map_save_error)
 }
 
 impl Vault {
@@ -101,7 +119,7 @@ impl Vault {
         Ok(())
     }
 
-    pub fn find_entry_by_title(&self, title: &str) -> Result<EntryId> {
+    pub fn find_entry_by_title(&self, title: &str) -> Result<EntryHandle> {
         let title_lower = title.to_ascii_lowercase();
         let mut found: Option<EntryId> = None;
         for entry in self.db.iter_all_entries() {
@@ -116,7 +134,9 @@ impl Vault {
                 found = Some(entry.id());
             }
         }
-        found.ok_or_else(|| KprunError::EntryNotFound(title.to_string()))
+        found
+            .map(EntryHandle)
+            .ok_or_else(|| KprunError::EntryNotFound(title.to_string()))
     }
 
     pub fn list_entries(&self) -> Vec<EntrySummary> {
@@ -130,16 +150,16 @@ impl Vault {
             .collect()
     }
 
-    pub fn entry_custom_keys(&self, id: EntryId) -> Vec<String> {
+    pub fn entry_custom_keys(&self, id: EntryHandle) -> Vec<String> {
         self.db
-            .entry(id)
+            .entry(id.0)
             .map(|e| custom_field_names(&e))
             .unwrap_or_default()
     }
 
-    pub fn entry_custom_values(&self, id: EntryId) -> HashMap<String, String> {
+    pub fn entry_custom_values(&self, id: EntryHandle) -> HashMap<String, String> {
         self.db
-            .entry(id)
+            .entry(id.0)
             .map(|e| custom_fields(&e))
             .unwrap_or_default()
     }
@@ -150,7 +170,7 @@ impl Vault {
         let result = self.find_entry_by_title(&title_owned);
         match result {
             Ok(id) => {
-                if let Some(mut entry) = self.db.entry_mut(id) {
+                if let Some(mut entry) = self.db.entry_mut(id.0) {
                     for (k, v) in pairs {
                         entry.set_protected(k.clone(), v.clone());
                     }
@@ -173,7 +193,7 @@ impl Vault {
     pub fn unset_attributes(&mut self, title: &str, keys: &[String]) -> Result<()> {
         self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
-        if let Some(mut entry) = self.db.entry_mut(id) {
+        if let Some(mut entry) = self.db.entry_mut(id.0) {
             for k in keys {
                 entry.fields.remove(k);
             }
@@ -184,7 +204,7 @@ impl Vault {
     pub fn delete_entry(&mut self, title: &str) -> Result<()> {
         self.require_rw()?;
         let id = self.find_entry_by_title(title)?;
-        if let Some(entry) = self.db.entry_mut(id) {
+        if let Some(entry) = self.db.entry_mut(id.0) {
             entry.remove();
             Ok(())
         } else {
@@ -192,13 +212,13 @@ impl Vault {
         }
     }
 
-    pub fn save(&mut self, key: keepass::DatabaseKey) -> Result<()> {
+    pub fn save(&mut self, key: VaultKey) -> Result<()> {
         self.require_rw()?;
         prepare_for_save(&mut self.db);
         let mut tmp =
             tempfile::NamedTempFile::new_in(self.path.parent().unwrap_or_else(|| Path::new(".")))?;
         self.db
-            .save(tmp.as_file_mut(), key)
+            .save(tmp.as_file_mut(), key.into_inner())
             .map_err(map_save_error)?;
         crate::secure_fs::persist_restricted(tmp, &self.path)?;
         Ok(())
@@ -463,7 +483,7 @@ mod tests {
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
         let mut file = std::fs::File::create(&path).unwrap();
-        db.save(&mut file, key.clone()).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
 
         let vault = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
         let err = vault.find_entry_by_title("dup").unwrap_err();
@@ -500,7 +520,7 @@ mod tests {
         // header, not just the in-memory struct.
         let vault = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
         assert_eq!(
-            vault.database().config.kdf_config,
+            vault.db.config.kdf_config,
             keepass::config::KdfConfig::Argon2id {
                 iterations: 3,
                 memory: 64 * 1024 * 1024,

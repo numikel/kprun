@@ -1,7 +1,7 @@
 use kprun_core::audit::{log_access, AuditRecord};
 use kprun_core::config::Config;
 use kprun_core::unlock::{build_database_key, unlock_with_fallback, UnlockContext};
-use kprun_core::vault::{open_vault, DatabaseKey, OpenMode, Vault};
+use kprun_core::vault::{open_vault, OpenMode, Vault, VaultKey};
 use kprun_core::Result;
 
 use crate::cli::Commands;
@@ -73,7 +73,7 @@ pub fn dispatch(command: Commands) {
     }
 }
 
-fn unlock_vault(mode: OpenMode) -> Result<(Config, Vault, DatabaseKey)> {
+fn unlock_vault(mode: OpenMode) -> Result<(Config, Vault, VaultKey)> {
     let cfg = Config::from_env();
     let ctx = UnlockContext {
         keyfile: cfg.keyfile.clone(),
