@@ -33,7 +33,9 @@ Vaults created by `kprun init` use **Argon2id** (RFC 9106) with 64 MiB memory, 3
 
 ### File permissions
 
-Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, inheritance is removed and access is limited to the current user).
+Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, access is granted to the current user's resolved process-token SID, not the caller-controllable `USERNAME` environment variable, and inheritance is removed).
+
+Directories kprun creates (e.g. `~/.kprun` on first use) are hardened to owner-only at creation time (`0700` on Unix; owner-only ACL with inheritance on Windows), so files written inside inherit restricted access from the first millisecond — this closes the brief window that otherwise exists between creating a file and hardening it individually. Existing directories are left untouched. If you point `KPRUN_DB` or `KPRUN_LOG` at a directory kprun did not create, that directory's existing permissions apply; kprun does not retroactively harden directories it didn't create itself.
 
 The audit log (`access.log`) records, per line: timestamp, pid, a non-identifying vault id (truncated SHA-256 of the canonical db path — never the raw path), entry titles, injected key **names**, and the child command name or MCP URL host. Secret values never reach the log.
 
