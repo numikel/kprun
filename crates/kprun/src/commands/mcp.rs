@@ -103,16 +103,12 @@ fn mcp_inner(
     let is_http = parsed
         .scheme_str()
         .is_some_and(|s| s.eq_ignore_ascii_case("http"));
-    if is_http
-        && has_secret_material
-        && !is_loopback_host(&host_of(&resolved_url))
-        && !allow_insecure_http
-    {
+    let host = host_of(&resolved_url);
+    if is_http && has_secret_material && !is_loopback_host(&host) && !allow_insecure_http {
         return Err(KprunError::Other(format!(
             "refusing to send vault-backed credentials over plaintext http:// \
-             to non-loopback host '{}'; use https:// or pass \
-             --allow-insecure-http to accept the risk",
-            host_of(&resolved_url)
+             to non-loopback host '{host}'; use https:// or pass \
+             --allow-insecure-http to accept the risk"
         )));
     }
 
@@ -130,7 +126,7 @@ fn mcp_inner(
             &cfg.db_path,
             vec![entry],
             header_names,
-            Some(format!("mcp {}", host_of(&resolved_url))),
+            Some(format!("mcp {host}")),
         ),
     )?;
 
@@ -148,7 +144,13 @@ fn mcp_inner(
 
 fn host_of(url: &str) -> String {
     let rest = url.split("://").nth(1).unwrap_or(url);
-    rest.split(['/', '?']).next().unwrap_or("").to_string()
+    let authority = rest.split(['/', '?']).next().unwrap_or("");
+    // Strip `user:pass@` / `user@` userinfo. Bracketed IPv6 hosts never
+    // contain '@', so splitting on the last '@' in the authority is safe.
+    authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host)
+        .to_string()
 }
 
 /// Loopback per the design: 127.0.0.0/8, ::1 (bracketed or not), and
@@ -184,6 +186,13 @@ mod tests {
     }
 
     #[test]
+    fn host_of_strips_userinfo() {
+        assert_eq!(host_of("http://user@localhost:1234/foo"), "localhost:1234");
+        assert_eq!(host_of("http://user:pass@127.0.0.1/x"), "127.0.0.1");
+        assert_eq!(host_of("http://user@[::1]:8080/y"), "[::1]:8080");
+    }
+
+    #[test]
     fn loopback_hosts_are_recognized() {
         assert!(is_loopback_host("127.0.0.1"));
         assert!(is_loopback_host("127.0.0.1:8080"));
@@ -193,6 +202,10 @@ mod tests {
         assert!(is_loopback_host("[::1]:8080"));
         assert!(is_loopback_host("localhost"));
         assert!(is_loopback_host("LOCALHOST:3000"));
+        // Regression: userinfo must already be stripped by host_of() before
+        // reaching is_loopback_host(), or a URL like `http://user@localhost`
+        // is wrongly treated as non-loopback.
+        assert!(is_loopback_host(&host_of("http://user@localhost:1234/foo")));
     }
 
     #[test]

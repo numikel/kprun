@@ -286,6 +286,72 @@ fn audit_log_records_names_and_host_never_values() {
 }
 
 #[test]
+fn refused_request_writes_no_audit_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_vault(&db);
+
+    // No --allow-insecure-http, non-loopback host, has --bearer: refused
+    // before any audit write. KPRUN_LOG points at a path that must never
+    // be created.
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", &log)
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("refusing to send"));
+
+    assert!(
+        !log.exists(),
+        "refusal must happen before any audit write, but the log file was created"
+    );
+}
+
+#[test]
+fn allow_insecure_http_override_still_writes_audit_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_vault(&db);
+
+    // --allow-insecure-http passes the policy gate, so the audit record is
+    // written before run_bridge dispatches — the .invalid host then fails
+    // at the transport/DNS layer, but that happens strictly after the
+    // audit write.
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", &log)
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--allow-insecure-http",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let audit = std::fs::read_to_string(&log)
+        .expect("policy gate passed, audit record must have been written");
+    assert!(audit.contains("github"));
+    assert!(audit.contains("mcp.example.invalid"));
+    assert!(!audit.contains("github_pat_test"));
+}
+
+#[test]
 fn session_404_triggers_transparent_reinit_and_retry() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
