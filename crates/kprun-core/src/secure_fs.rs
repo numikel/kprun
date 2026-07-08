@@ -65,6 +65,13 @@ pub fn harden_existing(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+pub fn harden_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
 #[cfg(not(any(unix, windows)))]
 fn create_restricted_inner(path: &Path) -> Result<File> {
     Ok(File::create(path)?)
@@ -80,6 +87,11 @@ fn open_append_inner(path: &Path) -> Result<File> {
 
 #[cfg(not(any(unix, windows)))]
 pub fn harden_existing(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn harden_dir(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -101,24 +113,38 @@ fn open_append_inner(path: &Path) -> Result<File> {
         .open(path)?)
 }
 
-/// Enforce owner-only access on Windows by removing inheritance and granting
-/// full control only to the current user (`icacls <path> /inheritance:r /grant:r "<user>:F"`).
+/// Resolve the current user's SID from the process token (`whoami /user`),
+/// not from the caller-controllable USERNAME environment variable.
 #[cfg(windows)]
-pub fn harden_existing(path: &Path) -> Result<()> {
+fn current_user_sid() -> Result<String> {
     use std::process::Command;
+    let output = Command::new("whoami")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .output()
+        .map_err(|e| KprunError::Other(format!("secure_fs: failed to run whoami: {e}")))?;
+    if !output.status.success() {
+        return Err(KprunError::Other("secure_fs: whoami /user failed".into()));
+    }
+    // /fo csv /nh prints one line: "DOMAIN\user","S-1-5-21-…"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .rsplit(',')
+        .next()
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| s.starts_with("S-1-"))
+        .ok_or_else(|| KprunError::Other("secure_fs: could not parse SID from whoami".into()))
+}
 
-    let user = std::env::var("USERNAME")
-        .map_err(|_| KprunError::Other("secure_fs: USERNAME not set".into()))?;
-    let grant = format!("{user}:F");
-
+#[cfg(windows)]
+fn run_icacls(path: &Path, grant: &str) -> Result<()> {
+    use std::process::Command;
     let output = Command::new("icacls")
         .arg(path)
         .arg("/inheritance:r")
         .arg("/grant:r")
-        .arg(&grant)
+        .arg(grant)
         .output()
         .map_err(|e| KprunError::Other(format!("secure_fs: failed to run icacls: {e}")))?;
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(KprunError::Other(format!(
@@ -127,6 +153,23 @@ pub fn harden_existing(path: &Path) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Enforce owner-only access on Windows by removing inheritance and granting
+/// full control only to the process token's SID.
+#[cfg(windows)]
+pub fn harden_existing(path: &Path) -> Result<()> {
+    let sid = current_user_sid()?;
+    run_icacls(path, &format!("*{sid}:F"))
+}
+
+/// Enforce owner-only permissions on a directory. On Windows the (OI)(CI)
+/// inheritance flags make new children start owner-only from creation,
+/// closing the create-then-harden ACL window for files inside.
+#[cfg(windows)]
+pub fn harden_dir(path: &Path) -> Result<()> {
+    let sid = current_user_sid()?;
+    run_icacls(path, &format!("*{sid}:(OI)(CI)F"))
 }
 
 /// Persist a NamedTempFile to `dst` and enforce owner-only permissions on the result.
@@ -193,6 +236,17 @@ mod windows_tests {
         let acl = icacls_dump(&p);
         // After /inheritance:r only explicit (current-user) entries remain;
         // built-in BUILTIN\Users group should not be present.
+        assert!(!acl.contains("BUILTIN\\Users"));
+        assert!(!acl.contains("Everyone"));
+    }
+
+    #[test]
+    fn harden_dir_removes_inheritance() {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("kprun-home");
+        std::fs::create_dir(&sub).unwrap();
+        harden_dir(&sub).unwrap();
+        let acl = icacls_dump(&sub);
         assert!(!acl.contains("BUILTIN\\Users"));
         assert!(!acl.contains("Everyone"));
     }

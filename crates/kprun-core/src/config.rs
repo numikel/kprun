@@ -41,8 +41,13 @@ fn home_dir() -> PathBuf {
 impl Config {
     pub fn ensure_parent_dirs(&self, path: &Path) -> crate::Result<()> {
         if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
                 std::fs::create_dir_all(parent)?;
+                // A directory kprun creates will hold secret files (vault,
+                // keyfile, log): make it owner-only so children inherit
+                // restricted access from the first millisecond. Existing
+                // user directories are left untouched.
+                crate::secure_fs::harden_dir(parent)?;
             }
         }
         Ok(())
@@ -66,5 +71,20 @@ mod tests {
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/tmp"))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_parent_dirs_creates_owner_only_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("kprun-home").join("access.log");
+        let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
+        cfg.ensure_parent_dirs(&log).unwrap();
+        let mode = std::fs::metadata(dir.path().join("kprun-home"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 }
