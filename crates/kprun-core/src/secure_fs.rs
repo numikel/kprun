@@ -172,6 +172,28 @@ pub fn harden_dir(path: &Path) -> Result<()> {
     run_icacls(path, &format!("*{sid}:(OI)(CI)F"))
 }
 
+/// Create `path` and any missing ancestors, hardening every directory this
+/// call actually creates. `create_dir_all` alone would leave intermediate
+/// directories at the process umask (Unix) or default ACL (Windows) —
+/// only the deepest directory would end up owner-only. Directories that
+/// already existed before this call are left untouched.
+pub fn create_dir_all_restricted(path: &Path) -> Result<()> {
+    let mut to_harden = Vec::new();
+    let mut cur = Some(path);
+    while let Some(dir) = cur {
+        if dir.as_os_str().is_empty() || dir.exists() {
+            break;
+        }
+        to_harden.push(dir);
+        cur = dir.parent();
+    }
+    std::fs::create_dir_all(path)?;
+    for dir in to_harden.into_iter().rev() {
+        harden_dir(dir)?;
+    }
+    Ok(())
+}
+
 /// Persist a NamedTempFile to `dst` and enforce owner-only permissions on the result.
 pub fn persist_restricted(tmp: tempfile::NamedTempFile, dst: &Path) -> Result<()> {
     let file = tmp.persist(dst).map_err(|e| KprunError::Io(e.error))?;
@@ -215,6 +237,40 @@ mod unix_tests {
         let mode = std::fs::metadata(&p).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
     }
+
+    #[test]
+    fn create_dir_all_restricted_hardens_all_new_ancestors() {
+        let dir = tempdir().unwrap();
+        let leaf = dir.path().join("a").join("b").join("c");
+        create_dir_all_restricted(&leaf).unwrap();
+        for rel in ["a", "a/b", "a/b/c"] {
+            let mode = std::fs::metadata(dir.path().join(rel))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o700, "{rel} must be owner-only");
+        }
+    }
+
+    #[test]
+    fn create_dir_all_restricted_leaves_existing_ancestor_untouched() {
+        let dir = tempdir().unwrap();
+        let existing = dir.path().join("preexisting");
+        std::fs::create_dir(&existing).unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_dir_all_restricted(&existing.join("nested")).unwrap();
+        let mode = std::fs::metadata(&existing).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o755,
+            "pre-existing directory must be left as-is"
+        );
+        let mode_nested = std::fs::metadata(existing.join("nested"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode_nested & 0o777, 0o700);
+    }
 }
 
 #[cfg(all(test, windows))]
@@ -249,5 +305,35 @@ mod windows_tests {
         let acl = icacls_dump(&sub);
         assert!(!acl.contains("BUILTIN\\Users"));
         assert!(!acl.contains("Everyone"));
+    }
+
+    #[test]
+    fn create_dir_all_restricted_hardens_all_new_ancestors() {
+        let dir = tempdir().unwrap();
+        let leaf = dir.path().join("a").join("b").join("c");
+        create_dir_all_restricted(&leaf).unwrap();
+        for rel in ["a", "a/b"] {
+            let acl = icacls_dump(&dir.path().join(rel));
+            assert!(
+                !acl.contains("BUILTIN\\Users") && !acl.contains("Everyone"),
+                "{rel} must have inheritance removed"
+            );
+        }
+    }
+
+    #[test]
+    fn create_dir_all_restricted_leaves_existing_ancestor_untouched() {
+        let dir = tempdir().unwrap();
+        let existing = dir.path().join("preexisting");
+        std::fs::create_dir(&existing).unwrap();
+        let acl_before = icacls_dump(&existing);
+        create_dir_all_restricted(&existing.join("nested")).unwrap();
+        let acl_after = icacls_dump(&existing);
+        assert_eq!(
+            acl_before, acl_after,
+            "pre-existing directory ACL must be untouched"
+        );
+        let acl_nested = icacls_dump(&existing.join("nested"));
+        assert!(!acl_nested.contains("BUILTIN\\Users") && !acl_nested.contains("Everyone"));
     }
 }
