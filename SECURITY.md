@@ -33,9 +33,30 @@ Vaults created by `kprun init` use **Argon2id** (RFC 9106) with 64 MiB memory, 3
 
 ### File permissions
 
-Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, inheritance is removed and access is limited to the current user).
+Vault databases, keyfiles, audit logs, and export files are created with owner-only permissions (`0600` on Unix; on Windows, access is granted to the current user's resolved process-token SID, not the caller-controllable `USERNAME` environment variable, and inheritance is removed).
+
+Directories kprun creates (e.g. `~/.kprun` on first use) are hardened to owner-only at creation time (`0700` on Unix; owner-only ACL with inheritance on Windows), so files written inside inherit restricted access from the first millisecond — this closes the brief window that otherwise exists between creating a file and hardening it individually. Existing directories are left untouched. If you point `KPRUN_DB` or `KPRUN_LOG` at a directory kprun did not create, that directory's existing permissions apply; kprun does not retroactively harden directories it didn't create itself.
 
 The audit log (`access.log`) records, per line: timestamp, pid, a non-identifying vault id (truncated SHA-256 of the canonical db path — never the raw path), entry titles, injected key **names**, and the child command name or MCP URL host. Secret values never reach the log.
+
+The "never values" guarantee applies to the **structured audit log only**.
+stderr diagnostics from `kprun mcp` may include the HTTP status, the URL
+scheme and host, and header **names** — never the full resolved URL (whose
+query string may contain substituted `{{FIELD}}` secrets) and never header
+or field values. URL parse failures cite the pre-substitution template you
+typed, not the resolved form.
+
+### Audit log retention
+
+`access.log` rotates automatically when it reaches 5 MB: the current file is
+renamed to `access.log.1` (replacing any previous rotation) and a fresh
+owner-only log is started. At most two files (~10 MB) are retained. To purge
+history manually, delete `access.log` and `access.log.1` — they are recreated
+with owner-only permissions on next use.
+
+Entry titles appear verbatim in the log. Pick non-identifying,
+service-oriented titles (`github`, `openai`) instead of personal or client
+names — the log is unencrypted and retained per the rotation model above.
 
 ### Keychain storage
 
@@ -44,6 +65,15 @@ When you run `kprun init` without `--no-store`, the KeePass master password is s
 ### Process environment exposure
 
 Injected secrets are visible to the child process and, on many systems, to other users with sufficient privileges via `/proc/<pid>/environ`, Process Explorer, or `ps e`. Use `kprun run --clean-env` to drop the parent environment and pass only injected secrets plus a minimal safe baseline.
+
+### Plaintext HTTP policy (`kprun mcp`)
+
+`kprun mcp` refuses to start when the resolved URL uses `http://` on a
+non-loopback host while credentials are present (`--bearer`, any `--header`,
+or a `{{FIELD}}` substitution in the URL): plaintext transport exposes them
+to any network observer. Loopback (`127.0.0.0/8`, `::1`, `localhost`) is
+exempt for local development. `--allow-insecure-http` overrides the refusal
+for deliberately trusted network paths.
 
 ### Injection blocklist
 

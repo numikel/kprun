@@ -326,7 +326,7 @@ kprun init   [--db PATH] [--no-store] [--keyfile PATH]
 kprun run    <entry> [entry2 ...] -- <command> [args...]
 kprun list   [--json]
 kprun get    <entry> [--keys] [--reveal]
-kprun set    <entry> KEY=val [KEY2=val2 ...]
+kprun set    <entry> KEY=val [KEY2=val2 ...] | --stdin
 kprun unset  <entry> KEY [KEY2 ...]
 kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
@@ -431,7 +431,8 @@ Hosted MCP servers (GitHub Copilot, remote SaaS endpoints, …) don't spawn a lo
 
 ```bash
 kprun mcp -e <entry> [--header "Name: template"]... [--bearer FIELD] \
-  [--transport auto|streamable-http|sse] [--timeout SECS] <url>
+  [--transport auto|streamable-http|sse] [--timeout SECS] \
+  [--allow-insecure-http] <url>
 ```
 
 - `-e, --entry <ENTRY>` — vault entry whose custom fields fill `{{FIELD}}` templates in headers and the URL
@@ -439,6 +440,7 @@ kprun mcp -e <entry> [--header "Name: template"]... [--bearer FIELD] \
 - `--bearer FIELD` — shorthand for `--header "Authorization: Bearer {{FIELD}}"`
 - `--transport` — `auto` (default, follows the MCP spec's backwards-compatibility detection: try Streamable HTTP, fall back to the deprecated HTTP+SSE), `streamable-http`, or `sse` (deprecated HTTP+SSE only). Providers are retiring HTTP+SSE endpoints (e.g. DeepWiki's `/sse` now returns `410 Gone`), and the legacy stream has no auto-reconnect — prefer Streamable HTTP URLs.
 - `--timeout SECS` — per-request timeout for POST round-trips (default 30; SSE streams are exempt — they're long-lived by design)
+- `--allow-insecure-http` — kprun refuses to send vault-backed credentials (`--bearer`, any `--header`, or a `{{FIELD}}` in the URL) over plaintext `http://` to a non-loopback host, because they would be readable by any network observer. `http://` to loopback (`127.0.0.0/8`, `::1`, `localhost`) is always allowed for local dev servers. This flag deliberately overrides the refusal for a trusted network path — prefer `https://`.
 
 Client config:
 
@@ -537,6 +539,13 @@ cargo test --all-features
 - Do not use `setx` or global shell profiles for API keys.
 - Pass only the entries a command needs: `kprun run openai -- python script.py`, not every secret at once.
 - `export --reveal` and `get --reveal` print values to the terminal — use deliberately.
+- Inline `kprun set <entry> KEY=value` puts the secret in your **shell history** and in **process listings** (`ps`, Task Manager) while the command runs. For sensitive values prefer `kprun set <entry> --stdin` and type or pipe `KEY=value` lines (blank lines and `#` comments are skipped):
+
+  ```bash
+  kprun set github --stdin <<'EOF'
+  GITHUB_TOKEN=ghp_xxx
+  EOF
+  ```
 
 ### Audit log format
 
@@ -556,6 +565,11 @@ Every audit record is one JSON line with exactly these fields:
 ```
 
 Prior to v0.3.2 the record carried a `db` field with the full vault path; lines written by older versions are left untouched — rotate or delete old logs if that matters to you.
+
+Entry titles are written **verbatim** to the unencrypted audit log on every
+access and are retained until rotation pushes them out (two files, ~10 MB).
+Choose service-oriented, non-identifying titles (`github`, `openai`,
+`staging-db`) rather than names of people or clients.
 
 ## Releases
 

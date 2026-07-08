@@ -42,7 +42,12 @@ impl Config {
     pub fn ensure_parent_dirs(&self, path: &Path) -> crate::Result<()> {
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
+                // Directories kprun creates will hold secret files (vault,
+                // keyfile, log): make every one of them owner-only, not just
+                // the deepest, so children inherit restricted access from
+                // the first millisecond. Existing user directories are left
+                // untouched.
+                crate::secure_fs::create_dir_all_restricted(parent)?;
             }
         }
         Ok(())
@@ -66,5 +71,41 @@ mod tests {
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/tmp"))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_parent_dirs_creates_owner_only_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("kprun-home").join("access.log");
+        let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
+        cfg.ensure_parent_dirs(&log).unwrap();
+        let mode = std::fs::metadata(dir.path().join("kprun-home"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_parent_dirs_hardens_nested_directories() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir
+            .path()
+            .join("kprun-home")
+            .join("nested")
+            .join("access.log");
+        let cfg = Config::from_env_overrides(None, None, Some(log.clone()));
+        cfg.ensure_parent_dirs(&log).unwrap();
+        for rel in ["kprun-home", "kprun-home/nested"] {
+            let mode = std::fs::metadata(dir.path().join(rel))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o700, "{rel} must be owner-only");
+        }
     }
 }

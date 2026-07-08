@@ -46,6 +46,8 @@ fn mock_server_roundtrip() {
 
 use std::path::Path;
 
+use predicates::prelude::PredicateBooleanExt;
+
 use common::{create_vault_with_entries, kprun_cmd, test_env};
 
 fn setup_vault(db: &Path) {
@@ -281,6 +283,72 @@ fn audit_log_records_names_and_host_never_values() {
     assert!(audit.contains("127.0.0.1"));
     assert!(!audit.contains("github_pat_test"));
     assert!(!audit.contains("/mcp/"));
+}
+
+#[test]
+fn refused_request_writes_no_audit_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_vault(&db);
+
+    // No --allow-insecure-http, non-loopback host, has --bearer: refused
+    // before any audit write. KPRUN_LOG points at a path that must never
+    // be created.
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", &log)
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("refusing to send"));
+
+    assert!(
+        !log.exists(),
+        "refusal must happen before any audit write, but the log file was created"
+    );
+}
+
+#[test]
+fn allow_insecure_http_override_still_writes_audit_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_vault(&db);
+
+    // --allow-insecure-http passes the policy gate, so the audit record is
+    // written before run_bridge dispatches — the .invalid host then fails
+    // at the transport/DNS layer, but that happens strictly after the
+    // audit write.
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", &log)
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--allow-insecure-http",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let audit = std::fs::read_to_string(&log)
+        .expect("policy gate passed, audit record must have been written");
+    assert!(audit.contains("github"));
+    assert!(audit.contains("mcp.example.invalid"));
+    assert!(!audit.contains("github_pat_test"));
 }
 
 #[test]
@@ -750,4 +818,142 @@ fn explicit_transport_sse_skips_streamable_probe() {
 
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests[0].method, "GET"); // no streamable POST probe
+}
+
+#[test]
+fn transport_error_never_prints_substituted_url_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // Reserve a port, then drop the listener: connecting is refused, which
+    // provokes a transport error after {{TOKEN}} was substituted into the URL.
+    let port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    };
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            &format!("http://127.0.0.1:{port}/mcp/?key={{{{TOKEN}}}}"),
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("github_pat_test"),
+        "substituted secret leaked to stderr: {stderr}"
+    );
+}
+
+#[test]
+fn invalid_resolved_url_error_cites_template_not_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // "{{TOKEN}}" alone resolves to "github_pat_test" — not a valid absolute
+    // URL. The error must cite the template, never the resolved value.
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(["mcp", "-e", "github", "{{TOKEN}}"])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("");
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("github_pat_test"),
+        "secret on stderr: {stderr}"
+    );
+    assert!(stderr.contains("{{TOKEN}}"), "template not cited: {stderr}");
+}
+
+#[test]
+fn http_remote_with_bearer_is_refused_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("plaintext http://"))
+        .stderr(predicates::str::contains("mcp.example.invalid"))
+        .stderr(predicates::str::contains("--allow-insecure-http"))
+        .stderr(predicates::str::contains("github_pat_test").not());
+}
+
+#[test]
+fn allow_insecure_http_overrides_the_refusal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // .invalid never resolves (RFC 2606), so after passing the policy gate
+    // the bridge fails with a DNS/transport error — NOT the refusal message.
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--allow-insecure-http",
+            "http://mcp.example.invalid/mcp/",
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("refusing to send"),
+        "override did not bypass the policy gate: {stderr}"
+    );
+    assert!(
+        !stderr.contains("github_pat_test"),
+        "secret on stderr: {stderr}"
+    );
+}
+
+#[test]
+fn http_remote_without_secrets_is_not_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    // No --bearer, no --header, no {{FIELD}} in the URL: policy does not
+    // apply. Failure comes from DNS/transport, not the refusal.
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(["mcp", "-e", "github", "http://mcp.example.invalid/mcp/"])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        !stderr.contains("refusing to send"),
+        "secretless http was wrongly refused: {stderr}"
+    );
 }

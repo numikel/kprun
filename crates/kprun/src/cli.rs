@@ -65,6 +65,9 @@ pub enum Commands {
         entry: String,
         /// KEY=value pairs to set on the entry
         pairs: Vec<String>,
+        /// Read KEY=value lines from stdin (avoids argv / shell-history exposure)
+        #[arg(long, conflicts_with = "pairs")]
+        stdin: bool,
     },
     /// Remove secret fields from a vault entry
     Unset {
@@ -132,6 +135,9 @@ pub enum Commands {
         /// Per-request timeout in seconds (SSE streams are exempt)
         #[arg(long, default_value_t = 30)]
         timeout: u64,
+        /// Allow vault-backed credentials over plaintext http:// to a non-loopback host
+        #[arg(long)]
+        allow_insecure_http: bool,
         /// Remote MCP endpoint URL (supports {{FIELD}} substitution)
         url: String,
     },
@@ -187,6 +193,7 @@ mod tests {
                 bearer,
                 transport,
                 timeout,
+                allow_insecure_http,
                 url,
             } => {
                 assert_eq!(entry, "github");
@@ -194,8 +201,29 @@ mod tests {
                 assert_eq!(bearer.as_deref(), Some("TOKEN"));
                 assert!(matches!(transport, McpTransport::StreamableHttp));
                 assert_eq!(timeout, 10);
+                assert!(!allow_insecure_http);
                 assert_eq!(url, "https://api.example.com/mcp/");
             }
+            _ => panic!("expected Commands::Mcp"),
+        }
+    }
+
+    #[test]
+    fn mcp_parses_allow_insecure_http() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "mcp",
+            "-e",
+            "gh",
+            "--allow-insecure-http",
+            "http://intranet.local/mcp/",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Mcp {
+                allow_insecure_http,
+                ..
+            } => assert!(allow_insecure_http),
             _ => panic!("expected Commands::Mcp"),
         }
     }
@@ -218,5 +246,12 @@ mod tests {
     fn mcp_requires_entry_and_url() {
         assert!(Cli::try_parse_from(["kprun", "mcp", "https://x.test/"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "mcp", "-e", "gh"]).is_err());
+    }
+
+    #[test]
+    fn set_stdin_conflicts_with_pairs() {
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1", "--stdin"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "--stdin"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1"]).is_ok());
     }
 }

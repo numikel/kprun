@@ -132,3 +132,40 @@ fn set_unset_delete_roundtrip() {
         .success()
         .stdout(predicates::str::contains("demo").not());
 }
+
+#[test]
+fn set_stdin_reads_pairs_skipping_blanks_and_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    create_vault_with_entries(&db, &[("seed", &[("SEED_KEY", "v")])]);
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args(["set", "github", "--stdin"])
+        .write_stdin("GITHUB_TOKEN=ghp_stdin_test\n\n# comment line\nORG=acme\n")
+        .assert()
+        .success();
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args(["get", "github", "--keys"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("GITHUB_TOKEN"))
+        .stdout(predicates::str::contains("ORG"));
+}
+
+#[test]
+fn set_stdin_malformed_line_fails_without_echoing_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    create_vault_with_entries(&db, &[("seed", &[("SEED_KEY", "v")])]);
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args(["set", "github", "--stdin"])
+        .write_stdin("this-line-has-no-equals-and-is-sensitive\n")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("no-equals-and-is-sensitive").not());
+}
