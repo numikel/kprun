@@ -93,6 +93,49 @@ pub(crate) fn emit_rpc_error(frame: &str, message: &str) {
     write_frame(&error.to_string());
 }
 
+/// Redact a URL down to scheme + host: the resolved query string may carry
+/// substituted vault secrets, so no error path may embed the full URL.
+pub(crate) fn redact_url(url: &str) -> String {
+    match url.find("://") {
+        Some(i) => {
+            let scheme = &url[..i];
+            let rest = &url[i + 3..];
+            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+            format!("{scheme}://{host}/…")
+        }
+        None => "<invalid-url>".to_string(),
+    }
+}
+
 pub(crate) fn http_err(e: ureq::Error) -> KprunError {
-    KprunError::Other(e.to_string())
+    match e {
+        // BadUri's Display embeds the full URI, which may contain
+        // substituted secrets in the query string — never echo it.
+        ureq::Error::BadUri(_) => {
+            KprunError::Other("invalid request URI (redacted; check the URL template)".into())
+        }
+        other => KprunError::Other(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_url;
+
+    #[test]
+    fn redact_url_keeps_scheme_and_host_only() {
+        assert_eq!(
+            redact_url("https://api.example.com/mcp/?key=SECRET_VALUE"),
+            "https://api.example.com/…"
+        );
+        assert_eq!(
+            redact_url("http://127.0.0.1:8080/x?token=SECRET"),
+            "http://127.0.0.1:8080/…"
+        );
+    }
+
+    #[test]
+    fn redact_url_handles_missing_scheme() {
+        assert_eq!(redact_url("no-scheme/path?x=SECRET"), "<invalid-url>");
+    }
 }

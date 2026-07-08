@@ -122,10 +122,9 @@ pub fn resolve_endpoint(base: &str, endpoint: &str) -> Result<String> {
     if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
         return Ok(endpoint.to_string());
     }
-    let scheme_end = base
-        .find("://")
-        .ok_or_else(|| KprunError::Other(format!("invalid base URL '{base}'")))?
-        + 3;
+    let scheme_end = base.find("://").ok_or_else(|| {
+        KprunError::Other(format!("invalid base URL '{}'", super::redact_url(base)))
+    })? + 3;
     let authority_end = base[scheme_end..]
         .find('/')
         .map(|i| scheme_end + i)
