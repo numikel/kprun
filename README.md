@@ -566,6 +566,11 @@ Every audit record is one JSON line with exactly these fields:
 
 Prior to v0.3.2 the record carried a `db` field with the full vault path; lines written by older versions are left untouched — rotate or delete old logs if that matters to you.
 
+Entry titles are written **verbatim** to the unencrypted audit log on every
+access and are retained until rotation pushes them out (two files, ~10 MB).
+Choose service-oriented, non-identifying titles (`github`, `openai`,
+`staging-db`) rather than names of people or clients.
+
 ## Releases
 
 Releases are published when a maintainer tags `vX.Y.Z` and pushes:

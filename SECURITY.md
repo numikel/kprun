@@ -52,6 +52,10 @@ owner-only log is started. At most two files (~10 MB) are retained. To purge
 history manually, delete `access.log` and `access.log.1` — they are recreated
 with owner-only permissions on next use.
 
+Entry titles appear verbatim in the log. Pick non-identifying,
+service-oriented titles (`github`, `openai`) instead of personal or client
+names — the log is unencrypted and retained per the rotation model above.
+
 ### Keychain storage
 
 When you run `kprun init` without `--no-store`, the KeePass master password is stored in the OS keychain (Credential Manager on Windows, Keychain on macOS, Secret Service on Linux). The entry is keyed per vault path (`kprun` / `master:<sha256(db_path)>`), not shared across vaults. The password is stored as plaintext in the keychain — anyone with access to your unlocked OS session can read it. Use `kprun deinit` to remove the stored password for the current vault.
