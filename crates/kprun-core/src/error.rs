@@ -29,8 +29,8 @@ pub enum KprunError {
     NonInteractiveUnlock,
     #[error("{0}")]
     Io(#[from] io::Error),
-    #[error("{0}")]
-    Keepass(String),
+    #[error("failed to open vault: {0}")]
+    VaultOpen(String),
     #[error("{0}")]
     Keyring(#[from] keyring::v1::Error),
     #[error("{0}")]

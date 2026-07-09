@@ -89,7 +89,7 @@ pub fn open_vault(path: &Path, key: VaultKey, mode: OpenMode) -> Result<Vault> {
     }
     let mut file = File::open(path)?;
     let db = Database::open(&mut file, key.into_inner())
-        .map_err(|e| KprunError::Keepass(e.to_string()))?;
+        .map_err(|e| KprunError::VaultOpen(e.to_string()))?;
     Ok(Vault {
         db,
         path: path.to_path_buf(),

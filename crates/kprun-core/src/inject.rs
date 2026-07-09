@@ -90,8 +90,16 @@ mod tests {
     use crate::unlock::{build_database_key, UnlockContext};
     use crate::vault::{open_vault, OpenMode};
     use keepass::db::fields;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
+
+    /// Save a raw `keepass::Database` built outside the `Vault` API (these
+    /// tests construct dangerous/edge-case entries `Vault::set_attributes`
+    /// wouldn't produce, so they bypass it and write the file directly).
+    fn save_raw_db(db: &mut keepass::Database, path: &Path, key: &crate::vault::VaultKey) {
+        let mut file = std::fs::File::create(path).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
+    }
 
     #[test]
     fn merges_multiple_entries() {
@@ -134,8 +142,7 @@ mod tests {
             db_path: PathBuf::from("test.kdbx"),
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
-        let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone().into_inner()).unwrap();
+        save_raw_db(&mut db, &db_path, &key);
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -192,8 +199,7 @@ mod tests {
             db_path: PathBuf::from("test.kdbx"),
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
-        let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone().into_inner()).unwrap();
+        save_raw_db(&mut db, &db_path, &key);
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -223,8 +229,7 @@ mod tests {
             db_path: PathBuf::from("test.kdbx"),
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
-        let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone().into_inner()).unwrap();
+        save_raw_db(&mut db, &db_path, &key);
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let result = resolve_injection(&vault, &["svc".into()]).unwrap();
@@ -255,8 +260,7 @@ mod tests {
             db_path: PathBuf::from("test.kdbx"),
         };
         let key = build_database_key(&ctx, test_vault_password()).unwrap();
-        let mut file = std::fs::File::create(&db_path).unwrap();
-        db.save(&mut file, key.clone().into_inner()).unwrap();
+        save_raw_db(&mut db, &db_path, &key);
 
         let vault = open_vault(&db_path, key, OpenMode::ReadOnly).unwrap();
         let names = vec!["entry_a".into(), "entry_b".into()];
