@@ -6,6 +6,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The user invokes all superpowers workflow skills (brainstorming → writing-plans → executing-plans etc.) **manually**. After finishing one stage (e.g. saving an approved design spec), STOP — do not ask whether to proceed and do not auto-invoke the next skill in the chain.
 
+### Model tier mapping
+
+When any Superpowers skill (especially `subagent-driven-development`,
+"Model Selection" section) refers to a "cheap/mechanical model", "standard
+model", or "most capable model" when dispatching a subagent, do NOT leave
+this underspecified or silently inherit the session's default model.
+Substitute the values below directly into the `model:` field (and
+`effort:`, if that field exists in the dispatch template).
+
+| Skill tier                | Model                      | Effort |
+|----------------------------|------------------------------|--------|
+| cheap / mechanical         | claude-haiku-4-5             | —      |
+| standard / execution       | claude-sonnet-5               | medium |
+| most capable / review      | claude-opus-4-8               | xhigh  |
+
+#### Escalation on BLOCKED or repeated failure
+claude-haiku-4-5 → claude-sonnet-5 (effort: high) → claude-opus-4-8 (effort: xhigh).
+Never redispatch the same task on the same model without changing
+approach — escalate the tier instead of repeating the attempt.
+
+#### Exceptions to the default step mapping (always "most capable",
+regardless of which step they appear in)
+- systematic-debugging (root-cause on a hard bug)
+- final whole-branch code reviewer (superpowers:requesting-code-review)
+- brainstorming and writing-plans
+
+#### Exceptions that are always "cheap", regardless of the general step mapping
+- using-git-worktrees
+- finishing-a-development-branch
+- /prepare-release — deterministic checklist; escalate to
+  claude-sonnet-5 (effort: medium) ONLY if the skill's §6 self-check
+  (cargo fmt / cargo test / version consistency) fails on the first pass
+
+#### verification-before-completion
+Always claude-sonnet-5, effort: high — never downgrade to cheap,
+regardless of how simple the task looks. The cost of a false "it works"
+is asymmetrically higher than the token savings.
+
+#### Verification
+After each dispatch inside subagent-driven-development, if the
+narration/log doesn't explicitly show which model was selected, ask
+briefly whether the mapping was applied — don't silently assume
+inheritance worked correctly.
+
 ## Build and development
 
 ```bash
