@@ -10,7 +10,7 @@ use crate::{KprunError, Result};
 /// Owned wrapper around the third-party key material so `keepass::DatabaseKey`
 /// never appears in `kprun-core`'s public API. Built via
 /// `unlock::build_database_key` / `unlock::unlock_noninteractive`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VaultKey(DatabaseKey);
 
 impl VaultKey {
@@ -20,6 +20,14 @@ impl VaultKey {
 
     pub(crate) fn into_inner(self) -> DatabaseKey {
         self.0
+    }
+}
+
+// `keepass::DatabaseKey` derives `Debug` and prints its `password` field in
+// plaintext, so a derived `Debug` here would defeat the point of wrapping it.
+impl std::fmt::Debug for VaultKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("VaultKey").field(&"<redacted>").finish()
     }
 }
 
