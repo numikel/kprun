@@ -255,17 +255,18 @@ fn custom_fields(entry: &EntryRef<'_>) -> HashMap<String, String> {
         .collect()
 }
 
-fn map_save_error(e: impl std::fmt::Display) -> KprunError {
-    let msg = e.to_string();
-    if msg.to_lowercase().contains("lock") {
-        KprunError::DatabaseLocked
-    } else if msg == "Unsupported database version" {
-        KprunError::Other(
+fn map_save_error(e: keepass::db::DatabaseSaveError) -> KprunError {
+    use keepass::db::DatabaseSaveError;
+
+    match e {
+        DatabaseSaveError::UnsupportedVersion => KprunError::Other(
             "vault format is read-only (legacy KDBX3/KDBX4.0); upgrade with KeePassXC or re-init"
                 .into(),
-        )
-    } else {
-        KprunError::Other(msg)
+        ),
+        DatabaseSaveError::Io(io_err) if io_err.to_string().to_lowercase().contains("lock") => {
+            KprunError::DatabaseLocked
+        }
+        other => KprunError::Other(other.to_string()),
     }
 }
 
@@ -528,5 +529,42 @@ mod tests {
                 version: argon2::Version::Version13,
             }
         );
+    }
+
+    #[test]
+    fn map_save_error_unsupported_version_suggests_upgrade() {
+        use keepass::db::DatabaseSaveError;
+
+        let err = map_save_error(DatabaseSaveError::UnsupportedVersion);
+        match err {
+            KprunError::Other(msg) => {
+                assert!(msg.contains("upgrade with KeePassXC or re-init"), "{msg}");
+            }
+            other => panic!("expected KprunError::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_save_error_io_lock_message_maps_to_database_locked() {
+        use keepass::db::DatabaseSaveError;
+
+        // Pins the exact wording this heuristic depends on: if a future
+        // std/keepass io-wrapping change stops producing "lock" in the
+        // message, this test fails loudly instead of silently falling
+        // through to `KprunError::Other`.
+        let io_err = std::io::Error::other(
+            "The process cannot access the file because it is locked by another process.",
+        );
+        let err = map_save_error(DatabaseSaveError::Io(io_err));
+        assert!(matches!(err, KprunError::DatabaseLocked));
+    }
+
+    #[test]
+    fn map_save_error_io_without_lock_wording_falls_through_to_other() {
+        use keepass::db::DatabaseSaveError;
+
+        let io_err = std::io::Error::other("disk full");
+        let err = map_save_error(DatabaseSaveError::Io(io_err));
+        assert!(matches!(err, KprunError::Other(_)));
     }
 }
