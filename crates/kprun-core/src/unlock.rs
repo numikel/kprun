@@ -5,6 +5,7 @@ use keepass::DatabaseKey;
 use keyring::v1::Entry;
 use zeroize::Zeroizing;
 
+use crate::vault::VaultKey;
 use crate::{KprunError, Result};
 
 const SERVICE: &str = "kprun";
@@ -89,56 +90,68 @@ pub fn unlock_master(
     source.get_master()
 }
 
+/// Outcome of attempting the OS keyring as a master-password source, shared
+/// by `unlock_with_fallback` and `unlock_noninteractive` so both classify
+/// keyring errors identically before diverging on their own fallback policy.
+enum KeyringOutcome {
+    Found(Zeroizing<String>),
+    /// No stored entry, or a keyring backend error (e.g. headless Linux CI
+    /// with no secret-service store) — caller should try its fallback.
+    Recoverable,
+    Fatal(KprunError),
+}
+
+fn try_keyring(ctx: &UnlockContext) -> KeyringOutcome {
+    match unlock_master(
+        ctx,
+        &SystemUnlock {
+            db_path: &ctx.db_path,
+        },
+    ) {
+        Ok(pw) => KeyringOutcome::Found(pw),
+        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => KeyringOutcome::Recoverable,
+        Err(e) => KeyringOutcome::Fatal(e),
+    }
+}
+
 pub fn unlock_with_fallback(ctx: &UnlockContext) -> Result<Zeroizing<String>> {
     // Test hook must override keyring so integration tests stay deterministic locally.
     #[cfg(feature = "test-hooks")]
     if std::env::var("KPRUN_TEST_MASTER").is_ok() {
         return unlock_master(ctx, &PromptUnlock);
     }
-    match unlock_master(
-        ctx,
-        &SystemUnlock {
-            db_path: &ctx.db_path,
-        },
-    ) {
-        Ok(pw) => Ok(pw),
-        // Headless Linux (CI) may have no secret-service store; fall back to prompt/test env.
-        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => {
-            unlock_master(ctx, &PromptUnlock)
-        }
-        Err(e) => Err(e),
+    match try_keyring(ctx) {
+        KeyringOutcome::Found(pw) => Ok(pw),
+        KeyringOutcome::Recoverable => unlock_master(ctx, &PromptUnlock),
+        KeyringOutcome::Fatal(e) => Err(e),
     }
 }
 
 /// Unlock without any TTY interaction (for `kprun mcp`, where stdin carries
 /// JSON-RPC frames and no terminal is attached). Order: test hook (feature
 /// gated) → OS keyring → keyfile-only key. Never prompts.
-pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<DatabaseKey> {
+pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<VaultKey> {
     #[cfg(feature = "test-hooks")]
     if let Ok(pw) = std::env::var("KPRUN_TEST_MASTER") {
         return build_database_key(ctx, &pw);
     }
-    match unlock_master(
-        ctx,
-        &SystemUnlock {
-            db_path: &ctx.db_path,
-        },
-    ) {
-        Ok(pw) => build_database_key(ctx, &pw),
-        Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => match &ctx.keyfile {
+    match try_keyring(ctx) {
+        KeyringOutcome::Found(pw) => build_database_key(ctx, &pw),
+        KeyringOutcome::Recoverable => match &ctx.keyfile {
             Some(path) => {
                 let mut file = File::open(path)?;
                 DatabaseKey::new()
                     .with_keyfile(&mut file)
+                    .map(VaultKey::new)
                     .map_err(|e| KprunError::Other(e.to_string()))
             }
             None => Err(KprunError::NonInteractiveUnlock),
         },
-        Err(e) => Err(e),
+        KeyringOutcome::Fatal(e) => Err(e),
     }
 }
 
-pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<DatabaseKey> {
+pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<VaultKey> {
     let mut key = DatabaseKey::new().with_password(master);
     if let Some(path) = &ctx.keyfile {
         let mut file = File::open(path)?;
@@ -146,7 +159,7 @@ pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<DatabaseK
             .with_keyfile(&mut file)
             .map_err(|e| KprunError::Other(e.to_string()))?;
     }
-    Ok(key)
+    Ok(VaultKey::new(key))
 }
 
 pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
@@ -259,7 +272,7 @@ mod tests {
 
         let mut file = File::open(&kf).unwrap();
         let key = DatabaseKey::new().with_keyfile(&mut file).unwrap();
-        crate::vault::create_vault(&db, key, "kprun").unwrap();
+        crate::vault::create_vault(&db, VaultKey::new(key), "kprun").unwrap();
 
         let ctx = UnlockContext {
             keyfile: Some(kf),
