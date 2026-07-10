@@ -62,6 +62,9 @@ const INIT_RESULT: &str =
     r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
 const LIST_RESULT: &str = r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}"#;
 
+const INIT_RESULT_V2: &str =
+    r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2026-01-01","capabilities":{}}}"#;
+
 fn init_response() -> MockResponse {
     MockResponse::Json {
         status: 200,
@@ -133,6 +136,22 @@ fn streamable_json_bridges_frames_and_headers() {
     );
     assert_eq!(
         posts[1]
+            .headers
+            .get("mcp-protocol-version")
+            .map(String::as_str),
+        Some("2025-06-18")
+    );
+
+    let delete = requests
+        .iter()
+        .find(|r| r.method == "DELETE")
+        .expect("shutdown DELETE was never sent");
+    assert_eq!(
+        delete.headers.get("mcp-session-id").map(String::as_str),
+        Some("sess-1")
+    );
+    assert_eq!(
+        delete
             .headers
             .get("mcp-protocol-version")
             .map(String::as_str),
@@ -378,7 +397,7 @@ fn session_404_triggers_transparent_reinit_and_retry() {
                 // transparent re-init → sess-2
                 status: 200,
                 headers: vec![("Mcp-Session-Id".into(), "sess-2".into())],
-                body: INIT_RESULT.into(),
+                body: INIT_RESULT_V2.into(),
             },
             _ => MockResponse::Json {
                 // retried tools/list
@@ -419,6 +438,14 @@ fn session_404_triggers_transparent_reinit_and_retry() {
     assert_eq!(
         posts[3].headers.get("mcp-session-id").map(String::as_str),
         Some("sess-2")
+    );
+    assert_eq!(
+        posts[3]
+            .headers
+            .get("mcp-protocol-version")
+            .map(String::as_str),
+        Some("2026-01-01"),
+        "retried frame must carry the re-negotiated protocol version"
     );
 }
 
@@ -680,6 +707,10 @@ fn server_get_stream_messages_reach_stdout() {
     assert_eq!(
         get.headers.get("accept").map(String::as_str),
         Some("text/event-stream")
+    );
+    assert_eq!(
+        get.headers.get("mcp-protocol-version").map(String::as_str),
+        Some("2025-06-18")
     );
 }
 

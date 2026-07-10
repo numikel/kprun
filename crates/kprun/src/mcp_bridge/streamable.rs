@@ -24,6 +24,29 @@ enum PostOutcome {
     SessionExpired,
 }
 
+/// Attach the headers common to every request the bridge issues: the
+/// custom (vault-substituted) headers, `Mcp-Session-Id`, and
+/// `MCP-Protocol-Version`. Generic over the ureq body typestate so POST
+/// (`WithBody`) and GET/DELETE (`WithoutBody`) share it; verb-specific
+/// headers (`Accept`, `Content-Type`, `Last-Event-ID`) stay at call sites.
+fn apply_common_headers<B>(
+    mut req: ureq::RequestBuilder<B>,
+    headers: &[(String, String)],
+    session_id: &Option<String>,
+    protocol_version: &Option<String>,
+) -> ureq::RequestBuilder<B> {
+    for (name, value) in headers {
+        req = req.header(name.as_str(), value.as_str());
+    }
+    if let Some(sid) = session_id {
+        req = req.header("Mcp-Session-Id", sid.as_str());
+    }
+    if let Some(version) = protocol_version {
+        req = req.header("MCP-Protocol-Version", version.as_str());
+    }
+    req
+}
+
 pub struct Session {
     post_agent: ureq::Agent,
     url: String,
@@ -32,7 +55,10 @@ pub struct Session {
     /// current session id, including after a transparent re-init replaces
     /// it mid-flight.
     session_id: Arc<Mutex<Option<String>>>,
-    protocol_version: Option<String>,
+    /// Shared with the background GET-stream thread — like `session_id` —
+    /// so the stream always sends the current negotiated version,
+    /// including after a transparent re-init re-negotiates it.
+    protocol_version: Arc<Mutex<Option<String>>>,
     /// Raw initialize frame, kept byte-for-byte for transparent re-init.
     init_frame: String,
 }
@@ -50,7 +76,7 @@ impl Session {
             url: cfg.url.clone(),
             headers: cfg.headers.clone(),
             session_id: Arc::new(Mutex::new(None)),
-            protocol_version: None,
+            protocol_version: Arc::new(Mutex::new(None)),
             init_frame,
         }
     }
@@ -59,21 +85,22 @@ impl Session {
         self.session_id.lock().unwrap().clone()
     }
 
+    fn protocol_version(&self) -> Option<String> {
+        self.protocol_version.lock().unwrap().clone()
+    }
+
     fn post_raw(&self, frame: &str) -> Result<ureq::http::Response<ureq::Body>> {
-        let mut req = self
+        let req = self
             .post_agent
             .post(&self.url)
             .header("Accept", "application/json, text/event-stream")
             .header("Content-Type", "application/json");
-        for (name, value) in &self.headers {
-            req = req.header(name.as_str(), value.as_str());
-        }
-        if let Some(sid) = self.session_id() {
-            req = req.header("Mcp-Session-Id", sid.as_str());
-        }
-        if let Some(version) = &self.protocol_version {
-            req = req.header("MCP-Protocol-Version", version.as_str());
-        }
+        let req = apply_common_headers(
+            req,
+            &self.headers,
+            &self.session_id(),
+            &self.protocol_version(),
+        );
         req.send(frame).map_err(http_err)
     }
 
@@ -129,9 +156,11 @@ impl Session {
 
     /// Transport metadata only: the negotiated version feeds the
     /// MCP-Protocol-Version request header. The frame itself is forwarded
-    /// verbatim regardless.
-    fn capture_protocol_version(&mut self, frame: &str) {
-        if self.protocol_version.is_some() {
+    /// verbatim regardless. First capture wins; `reinitialize` clears the
+    /// slot before re-capturing.
+    fn capture_protocol_version(&self, frame: &str) {
+        let mut slot = self.protocol_version.lock().unwrap();
+        if slot.is_some() {
             return;
         }
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(frame) {
@@ -139,7 +168,7 @@ impl Session {
                 .pointer("/result/protocolVersion")
                 .and_then(|v| v.as_str())
             {
-                self.protocol_version = Some(version.to_string());
+                *slot = Some(version.to_string());
             }
         }
     }
@@ -220,6 +249,9 @@ impl Session {
 
     fn reinitialize(&mut self) -> Result<()> {
         *self.session_id.lock().unwrap() = None;
+        // The new session may negotiate a different protocol version;
+        // reset the slot so capture_protocol_version re-captures below.
+        *self.protocol_version.lock().unwrap() = None;
         let frame = self.init_frame.clone();
         let mut resp = self.post_raw(&frame)?;
         let status = resp.status().as_u16();
@@ -229,8 +261,21 @@ impl Session {
             )));
         }
         self.capture_session(&resp);
-        // Drain without forwarding: the client never re-sent initialize.
-        let _ = resp.body_mut().read_to_vec();
+        // Drain without forwarding (the client never re-sent initialize),
+        // but parse the drained bytes to re-capture the negotiated
+        // version. The response may be plain JSON or a short SSE stream.
+        let mime = resp.body().mime_type().unwrap_or("").to_string();
+        if let Ok(bytes) = resp.body_mut().read_to_vec() {
+            if mime.starts_with("text/event-stream") {
+                for event in SseParser::new(bytes.as_slice()).flatten() {
+                    if !event.data.is_empty() {
+                        self.capture_protocol_version(&event.data);
+                    }
+                }
+            } else if let Ok(text) = std::str::from_utf8(&bytes) {
+                self.capture_protocol_version(text.trim_end());
+            }
+        }
         Ok(())
     }
 
@@ -254,6 +299,7 @@ impl Session {
         let url = cfg.url.clone();
         let headers = self.headers.clone();
         let session_id = self.session_id.clone();
+        let protocol_version = self.protocol_version.clone();
         std::thread::spawn(move || {
             let mut last_event_id: Option<String> = None;
             let mut ever_streamed = false;
@@ -262,13 +308,9 @@ impl Session {
                     return;
                 }
                 let current_sid = session_id.lock().unwrap().clone();
+                let current_version = protocol_version.lock().unwrap().clone();
                 let mut req = agent.get(&url).header("Accept", "text/event-stream");
-                for (name, value) in &headers {
-                    req = req.header(name.as_str(), value.as_str());
-                }
-                if let Some(sid) = &current_sid {
-                    req = req.header("Mcp-Session-Id", sid.as_str());
-                }
+                req = apply_common_headers(req, &headers, &current_sid, &current_version);
                 if let Some(id) = &last_event_id {
                     req = req.header("Last-Event-ID", id.as_str());
                 }
@@ -333,16 +375,12 @@ impl Session {
 
     /// Best-effort session termination (spec: HTTP DELETE).
     pub fn shutdown(&self) {
-        let Some(sid) = self.session_id() else {
+        let sid = self.session_id();
+        if sid.is_none() {
             return;
-        };
-        let mut req = self
-            .post_agent
-            .delete(&self.url)
-            .header("Mcp-Session-Id", sid.as_str());
-        for (name, value) in &self.headers {
-            req = req.header(name.as_str(), value.as_str());
         }
+        let req = self.post_agent.delete(&self.url);
+        let req = apply_common_headers(req, &self.headers, &sid, &self.protocol_version());
         let _ = req.call();
     }
 }
