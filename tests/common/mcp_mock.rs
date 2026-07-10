@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -59,7 +59,23 @@ impl MockServer {
         let handler = Arc::new(handler);
         thread::spawn(move || {
             for stream in listener.incoming() {
-                let Ok(stream) = stream else { break };
+                let stream = match stream {
+                    Ok(stream) => stream,
+                    // A pending connection reset/aborted before `accept()`
+                    // finished (observed as WSAECONNRESET on Windows) is a
+                    // property of that one connection attempt, not of the
+                    // listener — skip it and keep serving instead of
+                    // tearing down the whole mock server mid-test.
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                        ) =>
+                    {
+                        continue;
+                    }
+                    Err(_) => break,
+                };
                 let recorded = recorded.clone();
                 let handler = handler.clone();
                 thread::spawn(move || handle_connection(stream, recorded, handler));
@@ -88,10 +104,19 @@ fn handle_connection(
     write_response(&mut stream, response);
 }
 
+/// Reads one line. A reset/aborted connection — the client closing
+/// mid-request, observed as `io::ErrorKind::ConnectionReset` /
+/// `ConnectionAborted` (WSAECONNRESET on Windows) — is treated the same as
+/// a clean EOF: no request here, not a bug to unwrap/panic on. Any other
+/// read error gets the same treatment for this one-shot mock.
+fn read_line_or_eof(reader: &mut BufReader<TcpStream>, buf: &mut String) -> Option<usize> {
+    reader.read_line(buf).ok()
+}
+
 fn read_request(stream: &TcpStream) -> Option<MockRequest> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
-    if reader.read_line(&mut request_line).ok()? == 0 {
+    if read_line_or_eof(&mut reader, &mut request_line)? == 0 {
         return None;
     }
     let mut parts = request_line.split_whitespace();
@@ -100,7 +125,7 @@ fn read_request(stream: &TcpStream) -> Option<MockRequest> {
     let mut headers = HashMap::new();
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line).ok()? == 0 {
+        if read_line_or_eof(&mut reader, &mut line)? == 0 {
             return None;
         }
         let line = line.trim_end();
@@ -117,6 +142,9 @@ fn read_request(stream: &TcpStream) -> Option<MockRequest> {
         .unwrap_or(0);
     let mut body = vec![0u8; length];
     if length > 0 {
+        // Same treatment as read_line_or_eof for a reset mid-body
+        // (ConnectionReset / ConnectionAborted, or any other read error):
+        // end the request quietly rather than unwrapping/panicking.
         reader.read_exact(&mut body).ok()?;
     }
     Some(MockRequest {
