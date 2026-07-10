@@ -452,7 +452,29 @@ Client config:
 }
 ```
 
-`kprun mcp` never prompts — it needs a non-interactive unlock path. Run `kprun init` first so the master password is cached in the OS keyring, or set `KPRUN_KEYFILE` (see [Automation and cron](#automation-and-cron)). Note the keyfile is a *second* key component, not a password replacement: for a vault protected by password + keyfile, the password must be in the keyring (do not use `--no-store` at `init`), otherwise non-interactive unlock fails with `Incorrect key`. Like `run`, it writes nothing but JSON-RPC frames to stdout; the audit log records header names and the URL host only, never token values.
+Providers that use a custom header (not `Authorization: Bearer`) need `--header` instead of `--bearer`. [Context7](https://context7.com) is a common case — the native client config puts the API key in plaintext:
+
+```jsonc
+"context7": {
+  "url": "https://mcp.context7.com/mcp",
+  "headers": { "CONTEXT7_API_KEY": "YOUR_API_KEY" }
+}
+```
+
+Store the key in the vault (`kprun set context7 CONTEXT7_API_KEY=ctx7sk-...`, or `--stdin` to avoid shell history), then bridge with:
+
+```jsonc
+"context7": {
+  "command": "kprun",
+  "args": ["mcp", "-e", "context7",
+           "--header", "CONTEXT7_API_KEY: {{CONTEXT7_API_KEY}}",
+           "https://mcp.context7.com/mcp"]
+}
+```
+
+The `{{CONTEXT7_API_KEY}}` placeholder must match a custom field on the `context7` vault entry (`kprun get context7` lists field names). Starting the bridge writes [one audit line](#audit-log-format) (`entries: ["context7"]`, `injected_keys: ["CONTEXT7_API_KEY"]`, `command: "mcp mcp.context7.com"`) — not one line per tool call.
+
+`kprun mcp` never prompts — it needs a non-interactive unlock path. Run `kprun init` first so the master password is cached in the OS keyring, or set `KPRUN_KEYFILE` (see [Automation and cron](#automation-and-cron)). Note the keyfile is a *second* key component, not a password replacement: for a vault protected by password + keyfile, the password must be in the keyring (do not use `--no-store` at `init`), otherwise non-interactive unlock fails with `Incorrect key`. Like `run`, it writes nothing but JSON-RPC frames to stdout; the audit log gets **one line when the bridge starts** (header names and URL host only, never token values) — not on each MCP tool call in that session.
 
 Auth troubleshooting: a missing token yields a clear `HTTP 401` error, but some servers (e.g. GitHub Copilot MCP) answer an *invalid* token with `HTTP 400`, which `--transport auto` treats as a transport mismatch and retries over legacy SSE before failing ([#36](https://github.com/numikel/kprun/issues/36)). If both attempts fail with 4xx right after `initialize`, check the token in your vault entry first.
 
@@ -560,14 +582,23 @@ Every audit record is one JSON line with exactly these fields:
 | `injected_keys` | Env var / header **names** injected (never values) |
 | `command` | Child command name (`run`), `mcp <host>` (URL host only), or `null` |
 
+**When is a line written?** One line per kprun process that reads secrets from the vault — not per downstream operation inside that process. For `kprun run`, that is once when the child is spawned. For `kprun mcp`, that is once when the MCP client starts the bridge; every JSON-RPC frame (including repeated tool calls) reuses the same process and does **not** append further lines. A new line appears only when the client restarts the MCP server (reload config, IDE restart, reconnect). Individual MCP method names, request counts, and RPC payloads are never logged.
+
+Examples — `run` (one line per spawned child):
+
 ```json
 {"ts":"2026-07-08T14:03:11+0100","pid":4242,"db_id":"9f2b4c1a8e3d5f07","entries":["openai"],"injected_keys":["OPENAI_API_KEY"],"command":"python"}
 ```
 
+`mcp` (one line when Cursor starts the bridge; four Context7 tool calls in the same session still produce this single line):
+
+```json
+{"ts":"2026-07-10T23:00:00+0200","pid":12345,"db_id":"9f2b4c1a8e3d5f07","entries":["context7"],"injected_keys":["CONTEXT7_API_KEY"],"command":"mcp mcp.context7.com"}
+```
+
 Prior to v0.3.2 the record carried a `db` field with the full vault path; lines written by older versions are left untouched — rotate or delete old logs if that matters to you.
 
-Entry titles are written **verbatim** to the unencrypted audit log on every
-access and are retained until rotation pushes them out (two files, ~10 MB).
+Entry titles are written **verbatim** to the unencrypted audit log on each such vault read and are retained until rotation pushes them out (two files, ~10 MB).
 Choose service-oriented, non-identifying titles (`github`, `openai`,
 `staging-db`) rather than names of people or clients.
 

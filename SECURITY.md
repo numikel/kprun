@@ -37,7 +37,7 @@ Vault databases, keyfiles, audit logs, and export files are created with owner-o
 
 Directories kprun creates (e.g. `~/.kprun` on first use) are hardened to owner-only at creation time (`0700` on Unix; owner-only ACL with inheritance on Windows), so files written inside inherit restricted access from the first millisecond — this closes the brief window that otherwise exists between creating a file and hardening it individually. Existing directories are left untouched. If you point `KPRUN_DB` or `KPRUN_LOG` at a directory kprun did not create, that directory's existing permissions apply; kprun does not retroactively harden directories it didn't create itself.
 
-The audit log (`access.log`) records, per line: timestamp, pid, a non-identifying vault id (truncated SHA-256 of the canonical db path — never the raw path), entry titles, injected key **names**, and the child command name or MCP URL host. Secret values never reach the log.
+The audit log (`access.log`) records, per line: timestamp, pid, a non-identifying vault id (truncated SHA-256 of the canonical db path — never the raw path), entry titles, injected key **names**, and the child command name or MCP URL host. Secret values never reach the log. Each line corresponds to one kprun process that unlocked the vault (`run` spawn or `mcp` bridge start), not to individual MCP tool calls or child-process operations within that session.
 
 The "never values" guarantee applies to the **structured audit log only**.
 stderr diagnostics from `kprun mcp` may include the HTTP status, the URL
