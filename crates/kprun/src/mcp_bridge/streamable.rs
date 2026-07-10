@@ -526,3 +526,33 @@ pub fn run_with(
     let _ = done_rx.recv_timeout(Duration::from_secs(1));
     Ok(0)
 }
+
+pub enum ProbeOutcome {
+    /// Initialize succeeded and the bridge ran to completion.
+    Ran(i32),
+    /// Non-auth 4xx on initialize: the server predates Streamable HTTP.
+    /// Nothing was forwarded; the caller decides (hard error vs legacy
+    /// fallback).
+    FallbackToLegacy(u16),
+}
+
+/// Initialize against the server and, on success, run the full streamable
+/// bridge. 401/403 is a hard error here — an auth failure must never look
+/// like an old server (key invariant: no legacy fallback on 401/403).
+pub fn probe_and_run(
+    cfg: &BridgeConfig,
+    init_frame: String,
+    lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+) -> Result<ProbeOutcome> {
+    let mut session = Session::new(cfg, init_frame);
+    match session.initialize()? {
+        InitOutcome::Ready(resp) => {
+            session.finish_initialize(resp)?;
+            run_with(session, cfg, lines).map(ProbeOutcome::Ran)
+        }
+        InitOutcome::Unauthorized(status) => Err(KprunError::Other(format!(
+            "server returned HTTP {status}: authentication failed — check the token in your vault entry"
+        ))),
+        InitOutcome::FallbackToLegacy(status) => Ok(ProbeOutcome::FallbackToLegacy(status)),
+    }
+}

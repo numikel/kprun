@@ -7,14 +7,13 @@ use kprun_core::unlock::{unlock_noninteractive, UnlockContext};
 use kprun_core::vault::{open_vault, OpenMode};
 use kprun_core::{KprunError, Result};
 
-use crate::cli::McpTransport;
 use crate::mcp_bridge::{run_bridge, BridgeConfig, Transport};
 
 pub fn execute(
     entry: String,
     headers: Vec<String>,
     bearer: Option<String>,
-    transport: McpTransport,
+    transport: Transport,
     timeout: u64,
     allow_insecure_http: bool,
     url: String,
@@ -40,7 +39,7 @@ fn mcp_inner(
     entry: String,
     headers: Vec<String>,
     bearer: Option<String>,
-    transport: McpTransport,
+    transport: Transport,
     timeout: u64,
     allow_insecure_http: bool,
     url: String,
@@ -133,11 +132,7 @@ fn mcp_inner(
     run_bridge(BridgeConfig {
         url: resolved_url,
         headers: resolved_headers,
-        transport: match transport {
-            McpTransport::Auto => Transport::Auto,
-            McpTransport::StreamableHttp => Transport::Streamable,
-            McpTransport::Sse => Transport::LegacySse,
-        },
+        transport,
         timeout: Duration::from_secs(timeout),
     })
 }

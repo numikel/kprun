@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::mcp_bridge::Transport;
+
 #[derive(Parser)]
 #[command(
     name = "kprun",
@@ -130,8 +132,8 @@ pub enum Commands {
         #[arg(long, value_name = "FIELD")]
         bearer: Option<String>,
         /// Remote transport (auto follows MCP spec backwards-compatibility detection)
-        #[arg(long, value_enum, default_value_t = McpTransport::Auto)]
-        transport: McpTransport,
+        #[arg(long, value_enum, default_value_t = Transport::Auto)]
+        transport: Transport,
         /// Timeout in seconds for connect and response headers (response bodies and SSE streams are exempt)
         #[arg(long, default_value_t = 30)]
         timeout: u64,
@@ -151,16 +153,6 @@ pub enum ExportFormat {
     Json,
     /// kprun dotenv blocks (`# entry` headers and KEY=value lines)
     Dotenv,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum McpTransport {
-    /// Detect per MCP spec: try Streamable HTTP, fall back to HTTP+SSE
-    Auto,
-    /// Streamable HTTP (2025-03-26+) only
-    StreamableHttp,
-    /// Deprecated HTTP+SSE (2024-11-05) only
-    Sse,
 }
 
 #[cfg(test)]
@@ -199,7 +191,7 @@ mod tests {
                 assert_eq!(entry, "github");
                 assert_eq!(headers, vec!["X-Org: {{ORG}}".to_string()]);
                 assert_eq!(bearer.as_deref(), Some("TOKEN"));
-                assert!(matches!(transport, McpTransport::StreamableHttp));
+                assert!(matches!(transport, Transport::Streamable));
                 assert_eq!(timeout, 10);
                 assert!(!allow_insecure_http);
                 assert_eq!(url, "https://api.example.com/mcp/");
@@ -235,7 +227,7 @@ mod tests {
             Commands::Mcp {
                 transport, timeout, ..
             } => {
-                assert!(matches!(transport, McpTransport::Auto));
+                assert!(matches!(transport, Transport::Auto));
                 assert_eq!(timeout, 30);
             }
             _ => panic!("expected Commands::Mcp"),
