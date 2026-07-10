@@ -385,7 +385,12 @@ impl Session {
     /// `session_id`) and retries, so the stream comes back once re-init
     /// completes. A dropped stream reconnects with Last-Event-ID until
     /// shutdown.
-    pub fn spawn_server_stream(&self, cfg: &BridgeConfig, shutdown: Arc<AtomicBool>) {
+    pub fn spawn_server_stream(
+        &self,
+        cfg: &BridgeConfig,
+        shutdown: Arc<AtomicBool>,
+        done_tx: mpsc::Sender<()>,
+    ) {
         // Long-lived stream: connect timeout only, no global timeout.
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
@@ -397,6 +402,9 @@ impl Session {
         let session_id = self.session_id.clone();
         let protocol_version = self.protocol_version.clone();
         std::thread::spawn(move || {
+            // Dropped on every exit path, which disconnects the channel
+            // and unblocks run_with's bounded shutdown wait.
+            let _done_tx = done_tx;
             let mut last_event_id: Option<String> = None;
             let mut ever_streamed = false;
             loop {
@@ -500,7 +508,8 @@ pub fn run_with(
     lines: impl Iterator<Item = std::io::Result<String>>,
 ) -> Result<i32> {
     let shutdown = Arc::new(AtomicBool::new(false));
-    session.spawn_server_stream(cfg, shutdown.clone());
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    session.spawn_server_stream(cfg, shutdown.clone(), done_tx);
     for line in lines {
         let frame = line?;
         if frame.trim().is_empty() {
@@ -509,6 +518,11 @@ pub fn run_with(
         session.handle_frame(&frame);
     }
     shutdown.store(true, Ordering::Relaxed);
+    // The DELETE typically makes the server close the GET stream,
+    // unblocking the thread's read; then wait (bounded — std has no
+    // join-with-timeout) so a frame mid-write to stdout is never
+    // truncated by process exit.
     session.shutdown();
+    let _ = done_rx.recv_timeout(Duration::from_secs(1));
     Ok(0)
 }
