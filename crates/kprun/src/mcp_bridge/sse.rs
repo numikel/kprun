@@ -13,12 +13,16 @@ pub struct SseEvent {
 
 pub struct SseParser<R: Read> {
     reader: BufReader<R>,
+    /// Reused line buffer: this is the per-frame hot path of the
+    /// long-lived bridge, so per-line allocations add up.
+    raw: String,
 }
 
 impl<R: Read> SseParser<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader: BufReader::new(reader),
+            raw: String::new(),
         }
     }
 }
@@ -28,28 +32,30 @@ impl<R: Read> Iterator for SseParser<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut event = String::from("message");
-        let mut data_lines: Vec<String> = Vec::new();
+        // Single accumulator instead of Vec<String> + join: subsequent
+        // `data:` lines append '\n' then the value. `has_data` carries
+        // the one bit Vec::is_empty() provided — "no data field seen"
+        // vs "empty data" (the latter still emits an event).
+        let mut data = String::new();
+        let mut has_data = false;
         let mut id: Option<String> = None;
         loop {
-            let mut raw = String::new();
-            match self.reader.read_line(&mut raw) {
+            self.raw.clear();
+            match self.reader.read_line(&mut self.raw) {
                 Ok(0) => return None, // EOF discards any partial event (SSE spec)
                 Ok(_) => {}
                 Err(e) => return Some(Err(e)),
             }
-            let line = raw.trim_end_matches(['\r', '\n']);
+            let line = self.raw.trim_end_matches(['\r', '\n']);
             if line.is_empty() {
-                if data_lines.is_empty() {
+                if !has_data {
                     // Blank line with no accumulated data: reset and keep reading.
-                    event = String::from("message");
+                    event.clear();
+                    event.push_str("message");
                     id = None;
                     continue;
                 }
-                return Some(Ok(SseEvent {
-                    event,
-                    data: data_lines.join("\n"),
-                    id,
-                }));
+                return Some(Ok(SseEvent { event, data, id }));
             }
             if line.starts_with(':') {
                 continue; // comment / keepalive
@@ -59,8 +65,17 @@ impl<R: Read> Iterator for SseParser<R> {
                 None => (line, ""),
             };
             match field {
-                "event" => event = value.to_string(),
-                "data" => data_lines.push(value.to_string()),
+                "event" => {
+                    event.clear();
+                    event.push_str(value);
+                }
+                "data" => {
+                    if has_data {
+                        data.push('\n');
+                    }
+                    data.push_str(value);
+                    has_data = true;
+                }
                 "id" => id = Some(value.to_string()),
                 _ => {} // `retry` and unknown fields ignored
             }
@@ -126,5 +141,12 @@ mod tests {
     fn value_without_leading_space_is_kept() {
         let evs = events("data:tight\n\n");
         assert_eq!(evs[0].data, "tight");
+    }
+
+    #[test]
+    fn empty_data_line_still_emits_event() {
+        let evs = events("data:\n\n");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].data, "");
     }
 }

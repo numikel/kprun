@@ -74,6 +74,17 @@ pub fn run(
     });
 
     // 4. POST client frames to the endpoint.
+    //
+    // Deliberate leniency: a compliant 2024-11-05 server answers every
+    // POST with 202 and an empty body — all responses arrive on the GET
+    // stream — which makes the body forward below a no-op. Some
+    // pre-standard servers instead answer on the POST itself, so a
+    // non-empty body is forwarded. Known, accepted risk: a pathological
+    // server that BOTH answers the POST and echoes the same response on
+    // the stream would emit a duplicate JSON-RPC id on stdout. No dedup
+    // is attempted — this transport is deprecated, and penalizing the
+    // compliant majority for a server class never observed in practice
+    // is not worth it.
     let post = |frame: &str| -> Result<()> {
         let mut req = post_agent
             .post(&endpoint)
@@ -86,7 +97,8 @@ pub fn run(
         if !(200..300).contains(&status) {
             return Err(KprunError::Other(format!("upstream HTTP {status}")));
         }
-        // Some servers answer the POST with the response body directly.
+        // Pre-standard leniency: forward a non-empty POST body (see the
+        // comment above the closure).
         let text = resp.body_mut().read_to_string().map_err(http_err)?;
         let text = text.trim_end();
         if !text.is_empty() {

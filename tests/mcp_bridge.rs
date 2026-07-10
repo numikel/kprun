@@ -62,6 +62,9 @@ const INIT_RESULT: &str =
     r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
 const LIST_RESULT: &str = r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}"#;
 
+const INIT_RESULT_V2: &str =
+    r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2026-01-01","capabilities":{}}}"#;
+
 fn init_response() -> MockResponse {
     MockResponse::Json {
         status: 200,
@@ -138,6 +141,22 @@ fn streamable_json_bridges_frames_and_headers() {
             .map(String::as_str),
         Some("2025-06-18")
     );
+
+    let delete = requests
+        .iter()
+        .find(|r| r.method == "DELETE")
+        .expect("shutdown DELETE was never sent");
+    assert_eq!(
+        delete.headers.get("mcp-session-id").map(String::as_str),
+        Some("sess-1")
+    );
+    assert_eq!(
+        delete
+            .headers
+            .get("mcp-protocol-version")
+            .map(String::as_str),
+        Some("2025-06-18")
+    );
 }
 
 #[test]
@@ -186,6 +205,67 @@ fn streamable_sse_response_forwards_all_events() {
     assert_eq!(lines[0], INIT_RESULT);
     assert!(lines[1].contains("notifications/progress"));
     assert_eq!(lines[2], LIST_RESULT);
+}
+
+#[test]
+fn post_sse_response_outlives_request_timeout() {
+    // --timeout 1 guards connect + response headers only; the SSE body of
+    // a long-running tool call keeps streaming past it and must not be
+    // cut off (previously timeout_global aborted it mid-stream).
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    const PROGRESS: &str = r#"{"jsonrpc":"2.0","method":"notifications/progress"}"#;
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            MockResponse::SseDelayed {
+                status: 200,
+                chunks: vec![
+                    (
+                        std::time::Duration::ZERO,
+                        format!("event: message\ndata: {PROGRESS}\n\n"),
+                    ),
+                    (
+                        std::time::Duration::from_millis(1500),
+                        format!("event: message\ndata: {LIST_RESULT}\n\n"),
+                    ),
+                ],
+            }
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--timeout",
+            "1",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec![INIT_RESULT, PROGRESS, LIST_RESULT],
+        "SSE body was cut by the request timeout"
+    );
 }
 
 #[test]
@@ -371,15 +451,23 @@ fn session_404_triggers_transparent_reinit_and_retry() {
         match n {
             0 => init_response(), // initialize → sess-1
             1 => MockResponse::Empty {
+                status: 202,
+                headers: vec![],
+            }, // notifications/initialized accepted
+            2 => MockResponse::Empty {
                 status: 404,
                 headers: vec![],
-            }, // session expired
-            2 => MockResponse::Json {
-                // transparent re-init → sess-2
+            }, // tools/list: session expired
+            3 => MockResponse::Json {
+                // transparent re-init → sess-2, re-negotiated version
                 status: 200,
                 headers: vec![("Mcp-Session-Id".into(), "sess-2".into())],
-                body: INIT_RESULT.into(),
+                body: INIT_RESULT_V2.into(),
             },
+            4 => MockResponse::Empty {
+                status: 202,
+                headers: vec![],
+            }, // replayed notifications/initialized
             _ => MockResponse::Json {
                 // retried tools/list
                 status: 200,
@@ -399,13 +487,14 @@ fn session_404_triggers_transparent_reinit_and_retry() {
             "TOKEN",
             &server.url("/mcp/"),
         ])
-        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .write_stdin(format!("{INIT}\n{NOTIFY}\n{LIST}\n"))
         .assert()
         .success();
 
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     // Exactly two frames: the original init response and the retried list
-    // response. The transparent re-init response must NOT be forwarded.
+    // response. Neither the transparent re-init response nor the replayed
+    // notification may be forwarded.
     assert_eq!(
         stdout.lines().collect::<Vec<_>>(),
         vec![INIT_RESULT, LIST_RESULT]
@@ -413,12 +502,25 @@ fn session_404_triggers_transparent_reinit_and_retry() {
 
     let requests = server.requests.lock().unwrap();
     let posts: Vec<_> = requests.iter().filter(|r| r.method == "POST").collect();
-    assert_eq!(posts.len(), 4);
-    assert_eq!(posts[2].body, INIT); // re-init reuses the raw initialize frame
-    assert_eq!(posts[3].body, LIST); // then the original frame is retried
+    assert_eq!(posts.len(), 6);
+    assert_eq!(posts[3].body, INIT); // re-init reuses the raw initialize frame
+    assert_eq!(posts[4].body, NOTIFY); // …then replays initialized on sess-2
     assert_eq!(
-        posts[3].headers.get("mcp-session-id").map(String::as_str),
+        posts[4].headers.get("mcp-session-id").map(String::as_str),
         Some("sess-2")
+    );
+    assert_eq!(posts[5].body, LIST); // …then retries the original frame
+    assert_eq!(
+        posts[5].headers.get("mcp-session-id").map(String::as_str),
+        Some("sess-2")
+    );
+    assert_eq!(
+        posts[5]
+            .headers
+            .get("mcp-protocol-version")
+            .map(String::as_str),
+        Some("2026-01-01"),
+        "retried frame must carry the re-negotiated protocol version"
     );
 }
 
@@ -680,6 +782,10 @@ fn server_get_stream_messages_reach_stdout() {
     assert_eq!(
         get.headers.get("accept").map(String::as_str),
         Some("text/event-stream")
+    );
+    assert_eq!(
+        get.headers.get("mcp-protocol-version").map(String::as_str),
+        Some("2025-06-18")
     );
 }
 

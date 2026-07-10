@@ -10,12 +10,19 @@ pub mod streamable;
 use std::io::{BufRead, Write};
 use std::time::Duration;
 
+use clap::ValueEnum;
 use kprun_core::{KprunError, Result};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Transport {
+    /// Detect per MCP spec: try Streamable HTTP, fall back to HTTP+SSE
+    #[value(name = "auto")]
     Auto,
+    /// Streamable HTTP (2025-03-26+) only
+    #[value(name = "streamable-http")]
     Streamable,
+    /// Deprecated HTTP+SSE (2024-11-05) only
+    #[value(name = "sse")]
     LegacySse,
 }
 
@@ -24,6 +31,85 @@ pub struct BridgeConfig {
     pub headers: Vec<(String, String)>,
     pub transport: Transport,
     pub timeout: Duration,
+}
+
+/// One MCP remote transport: drives the whole bridge lifetime given the
+/// first stdin frame (always `initialize`) and the remaining stdin lines.
+pub trait McpTransportImpl {
+    fn run(
+        &self,
+        cfg: &BridgeConfig,
+        first: String,
+        lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+    ) -> Result<i32>;
+}
+
+/// Streamable HTTP only: a non-auth 4xx on initialize is a hard error.
+struct StreamableHttp;
+
+/// Deprecated HTTP+SSE only.
+struct LegacySse;
+
+/// Spec-mandated detection: probe Streamable HTTP, fall back to HTTP+SSE
+/// on a non-auth 4xx — a decorator around the streamable probe.
+struct Auto;
+
+impl McpTransportImpl for StreamableHttp {
+    fn run(
+        &self,
+        cfg: &BridgeConfig,
+        first: String,
+        lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+    ) -> Result<i32> {
+        match streamable::probe_and_run(cfg, first, lines)? {
+            streamable::ProbeOutcome::Ran(code) => Ok(code),
+            streamable::ProbeOutcome::FallbackToLegacy(status) => Err(KprunError::Other(format!(
+                "server rejected streamable HTTP (status {status}); try --transport auto"
+            ))),
+        }
+    }
+}
+
+impl McpTransportImpl for LegacySse {
+    fn run(
+        &self,
+        cfg: &BridgeConfig,
+        first: String,
+        lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+    ) -> Result<i32> {
+        legacy_sse::run(cfg, first, lines)
+    }
+}
+
+impl McpTransportImpl for Auto {
+    fn run(
+        &self,
+        cfg: &BridgeConfig,
+        first: String,
+        lines: &mut dyn Iterator<Item = std::io::Result<String>>,
+    ) -> Result<i32> {
+        match streamable::probe_and_run(cfg, first.clone(), lines)? {
+            streamable::ProbeOutcome::Ran(code) => Ok(code),
+            streamable::ProbeOutcome::FallbackToLegacy(status) => {
+                // MCP backwards compatibility: non-auth 4xx on the
+                // initialize POST → deprecated HTTP+SSE transport.
+                eprintln!(
+                    "kprun mcp: streamable HTTP rejected (HTTP {status}); falling back to HTTP+SSE"
+                );
+                legacy_sse::run(cfg, first, lines)
+            }
+        }
+    }
+}
+
+/// The single registration point: a new transport adds one enum variant
+/// above (with its CLI name) and one arm here.
+fn select_transport(transport: Transport) -> &'static dyn McpTransportImpl {
+    match transport {
+        Transport::Auto => &Auto,
+        Transport::Streamable => &StreamableHttp,
+        Transport::LegacySse => &LegacySse,
+    }
 }
 
 pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
@@ -35,35 +121,7 @@ pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
         return Ok(0);
     };
     let first = first?;
-    match cfg.transport {
-        Transport::Streamable | Transport::Auto => {
-            let mut session = streamable::Session::new(&cfg, first.clone());
-            match session.initialize()? {
-                streamable::InitOutcome::Ready(resp) => {
-                    session.finish_initialize(resp)?;
-                    streamable::run_with(session, &cfg, lines)
-                }
-                streamable::InitOutcome::Unauthorized(status) => Err(KprunError::Other(format!(
-                    "server returned HTTP {status}: authentication failed — check the token in your vault entry"
-                ))),
-                streamable::InitOutcome::FallbackToLegacy(status) => {
-                    if cfg.transport == Transport::Auto {
-                        // MCP backwards compatibility: non-auth 4xx on the
-                        // initialize POST → deprecated HTTP+SSE transport.
-                        eprintln!(
-                            "kprun mcp: streamable HTTP rejected (HTTP {status}); falling back to HTTP+SSE"
-                        );
-                        legacy_sse::run(&cfg, first, lines)
-                    } else {
-                        Err(KprunError::Other(format!(
-                            "server rejected streamable HTTP (status {status}); try --transport auto"
-                        )))
-                    }
-                }
-            }
-        }
-        Transport::LegacySse => legacy_sse::run(&cfg, first, lines),
-    }
+    select_transport(cfg.transport).run(&cfg, first, &mut lines)
 }
 
 /// Write one JSON-RPC frame to stdout, line-atomically (two threads may
