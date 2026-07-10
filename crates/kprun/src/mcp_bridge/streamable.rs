@@ -480,20 +480,24 @@ impl Session {
     /// Best-effort session termination (spec: HTTP DELETE). The DELETE
     /// response body is never read, so unlike the POST path there is no
     /// body-cutting hazard in bounding the whole call: it gets its own
-    /// agent with `timeout_global` set to `header_timeout`, rather than
-    /// reusing `post_agent` (which deliberately carries no response/global
-    /// timeout so POST bodies stay unbounded). Without this, a server that
-    /// accepts the TCP connection but never answers the DELETE would hang
-    /// `req.call()` forever, blocking process exit indefinitely.
+    /// agent with `timeout_global` fixed at `SHUTDOWN_DELETE_TIMEOUT`,
+    /// rather than reusing `post_agent` (which deliberately carries no
+    /// response/global timeout so POST bodies stay unbounded) or
+    /// `header_timeout` (`--timeout`, user-configurable up to and beyond
+    /// 30s). Process exit must not hinge on `--timeout`: a server that
+    /// accepts the TCP connection but never answers the DELETE must not be
+    /// able to delay shutdown by more than this fixed, short bound. The
+    /// global timeout alone covers connect too, so no separate
+    /// `timeout_connect` is needed.
     pub fn shutdown(&self) {
+        const SHUTDOWN_DELETE_TIMEOUT: Duration = Duration::from_secs(3);
         let sid = self.session_id();
         if sid.is_none() {
             return;
         }
         let delete_agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_global(Some(self.header_timeout))
+            .timeout_global(Some(SHUTDOWN_DELETE_TIMEOUT))
             .build()
             .into();
         let req = delete_agent.delete(&self.url);
