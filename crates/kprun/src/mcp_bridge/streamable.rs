@@ -61,6 +61,11 @@ pub struct Session {
     protocol_version: Arc<Mutex<Option<String>>>,
     /// Raw initialize frame, kept byte-for-byte for transparent re-init.
     init_frame: String,
+    /// Raw notifications/initialized frame, kept byte-for-byte so a
+    /// transparent re-init can replay the complete lifecycle. Deliberately
+    /// never synthesized: a client that skipped it gets the same
+    /// (incomplete) session shape it built for itself the first time.
+    initialized_frame: Option<String>,
 }
 
 impl Session {
@@ -78,6 +83,7 @@ impl Session {
             session_id: Arc::new(Mutex::new(None)),
             protocol_version: Arc::new(Mutex::new(None)),
             init_frame,
+            initialized_frame: None,
         }
     }
 
@@ -173,9 +179,24 @@ impl Session {
         }
     }
 
+    /// Record the client's `notifications/initialized` frame the first
+    /// time it passes through (it is still forwarded normally). Parsing
+    /// stops once captured.
+    fn capture_initialized(&mut self, frame: &str) {
+        if self.initialized_frame.is_some() {
+            return;
+        }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frame) {
+            if value.get("method").and_then(|m| m.as_str()) == Some("notifications/initialized") {
+                self.initialized_frame = Some(frame.to_string());
+            }
+        }
+    }
+
     /// POST one client frame and forward whatever comes back. Survives
     /// individual request failures (JSON-RPC -32603 + stderr detail).
     pub fn handle_frame(&mut self, frame: &str) {
+        self.capture_initialized(frame);
         for attempt in 0..2 {
             match self.post_and_forward(frame) {
                 Ok(PostOutcome::Done) => return,
@@ -274,6 +295,21 @@ impl Session {
                 }
             } else if let Ok(text) = std::str::from_utf8(&bytes) {
                 self.capture_protocol_version(text.trim_end());
+            }
+        }
+        // MCP lifecycle: the server expects notifications/initialized
+        // before normal requests on the fresh session. Best effort — a
+        // failure surfaces on the retried request itself.
+        if let Some(frame) = self.initialized_frame.clone() {
+            match self.post_raw(&frame) {
+                Ok(resp) if (200..300).contains(&resp.status().as_u16()) => {}
+                Ok(resp) => eprintln!(
+                    "kprun mcp: replaying notifications/initialized failed: HTTP {}",
+                    resp.status().as_u16()
+                ),
+                Err(e) => {
+                    eprintln!("kprun mcp: replaying notifications/initialized failed: {e}")
+                }
             }
         }
         Ok(())
