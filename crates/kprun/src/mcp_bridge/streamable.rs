@@ -2,6 +2,7 @@
 //! each response is plain JSON or a per-response SSE stream.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -47,8 +48,51 @@ fn apply_common_headers<B>(
     req
 }
 
+/// Sends `frame` and waits for the response status + headers, bounded by
+/// `timeout`. `req`'s agent carries no response/global ureq timeout — this
+/// function is the *only* place `--timeout` is enforced for a POST.
+///
+/// ureq 3.x has no config knob that bounds "receive headers" without the
+/// same deadline leaking into the body: its per-phase timeouts (`Timeouts`
+/// in `ureq::config`) are checked via each phase's *immediate predecessor*
+/// too, so a configured `timeout_recv_response` continues to serve as an
+/// absolute deadline (recorded-header-time + its own duration) during the
+/// following `RecvBody` phase, however large `timeout_recv_body` is set —
+/// `min_by` always picks the earliest candidate. Confirmed by tracing
+/// `ureq::timings::CallTimings::next_timeout` and reproducing with the
+/// `post_sse_response_outlives_request_timeout` test (it stayed RED after
+/// swapping `timeout_global` for `timeout_recv_response` alone). Running
+/// `send` on a helper thread and bounding the wait with a channel is the
+/// only way to keep the two truly independent: once the response comes
+/// back here, the caller reads its body on this (unbounded) thread using
+/// an agent that was never configured with any response-phase deadline.
+///
+/// If the timeout fires, the helper thread is abandoned — it may still
+/// complete or fail on its own against an unresponsive server, but the
+/// process is short-lived (one `kprun mcp` invocation per client session)
+/// and exits without waiting for detached threads regardless.
+fn send_bounded(
+    req: ureq::RequestBuilder<ureq::typestate::WithBody>,
+    frame: String,
+    timeout: Duration,
+) -> Result<ureq::http::Response<ureq::Body>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(req.send(frame).map_err(http_err));
+    });
+    rx.recv_timeout(timeout).unwrap_or_else(|_| {
+        Err(KprunError::Other(format!(
+            "no response headers within {timeout:?}"
+        )))
+    })
+}
+
 pub struct Session {
     post_agent: ureq::Agent,
+    /// Bounds connect + response headers only (enforced in `post_raw` via
+    /// `send_bounded`); response bodies, including SSE streams from a
+    /// long-running tool call, are unbounded.
+    header_timeout: Duration,
     url: String,
     headers: Vec<(String, String)>,
     /// Shared with the background GET-stream thread so it always sees the
@@ -70,14 +114,22 @@ pub struct Session {
 
 impl Session {
     pub fn new(cfg: &BridgeConfig, init_frame: String) -> Self {
+        // No response/global timeout here on purpose: `send_bounded` (used
+        // by `post_raw`) enforces `cfg.timeout` for connect + response
+        // headers itself, on a helper thread. Once headers are back, body
+        // reads on this agent — plain JSON or a per-request SSE stream from
+        // a long-running tool call — are unbounded, as the CLI help
+        // promises. Accepted trade-off: a stalled plain-JSON body also
+        // blocks unbounded — the response type is unknowable before the
+        // headers arrive.
         let post_agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_global(Some(cfg.timeout))
             .build()
             .into();
         Session {
             post_agent,
+            header_timeout: cfg.timeout,
             url: cfg.url.clone(),
             headers: cfg.headers.clone(),
             session_id: Arc::new(Mutex::new(None)),
@@ -107,7 +159,7 @@ impl Session {
             &self.session_id(),
             &self.protocol_version(),
         );
-        req.send(frame).map_err(http_err)
+        send_bounded(req, frame.to_string(), self.header_timeout)
     }
 
     pub fn initialize(&mut self) -> Result<InitOutcome> {

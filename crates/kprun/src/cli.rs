@@ -132,7 +132,7 @@ pub enum Commands {
         /// Remote transport (auto follows MCP spec backwards-compatibility detection)
         #[arg(long, value_enum, default_value_t = McpTransport::Auto)]
         transport: McpTransport,
-        /// Per-request timeout in seconds (SSE streams are exempt)
+        /// Timeout in seconds for connect and response headers (response bodies and SSE streams are exempt)
         #[arg(long, default_value_t = 30)]
         timeout: u64,
         /// Allow vault-backed credentials over plaintext http:// to a non-loopback host

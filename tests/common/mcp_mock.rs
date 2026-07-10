@@ -33,6 +33,12 @@ pub enum MockResponse {
     /// that breaks mid-stream, as opposed to a graceful EOF (which the SSE
     /// parser treats as a normal, silent end of stream).
     SseReset { status: u16, prefix: String },
+    /// Streams SSE chunks with a delay before each chunk, then closes.
+    /// Exercises response bodies that outlive the per-request timeout.
+    SseDelayed {
+        status: u16,
+        chunks: Vec<(std::time::Duration, String)>,
+    },
     Empty {
         status: u16,
         headers: Vec<(String, String)>,
@@ -157,6 +163,18 @@ fn write_response(stream: &mut TcpStream, response: MockResponse) {
             // read error rather than a clean EOF once the connection closes.
             let _ = stream.write_all(&[0xFF, 0xFE]);
             let _ = stream.flush();
+        }
+        MockResponse::SseDelayed { status, chunks } => {
+            let head = format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.flush();
+            for (delay, chunk) in chunks {
+                thread::sleep(delay);
+                let _ = stream.write_all(chunk.as_bytes());
+                let _ = stream.flush();
+            }
         }
         MockResponse::Empty { status, headers } => {
             let mut head =

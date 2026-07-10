@@ -208,6 +208,67 @@ fn streamable_sse_response_forwards_all_events() {
 }
 
 #[test]
+fn post_sse_response_outlives_request_timeout() {
+    // --timeout 1 guards connect + response headers only; the SSE body of
+    // a long-running tool call keeps streaming past it and must not be
+    // cut off (previously timeout_global aborted it mid-stream).
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    const PROGRESS: &str = r#"{"jsonrpc":"2.0","method":"notifications/progress"}"#;
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            MockResponse::SseDelayed {
+                status: 200,
+                chunks: vec![
+                    (
+                        std::time::Duration::ZERO,
+                        format!("event: message\ndata: {PROGRESS}\n\n"),
+                    ),
+                    (
+                        std::time::Duration::from_millis(1500),
+                        format!("event: message\ndata: {LIST_RESULT}\n\n"),
+                    ),
+                ],
+            }
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            "--timeout",
+            "1",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec![INIT_RESULT, PROGRESS, LIST_RESULT],
+        "SSE body was cut by the request timeout"
+    );
+}
+
+#[test]
 fn notification_202_writes_nothing_to_stdout() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
