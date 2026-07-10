@@ -68,9 +68,17 @@ fn apply_common_headers<B>(
 /// an agent that was never configured with any response-phase deadline.
 ///
 /// If the timeout fires, the helper thread is abandoned — it may still
-/// complete or fail on its own against an unresponsive server, but the
-/// process is short-lived (one `kprun mcp` invocation per client session)
-/// and exits without waiting for detached threads regardless.
+/// complete or fail on its own against an unresponsive server. Because the
+/// response body must stay unbounded, no response-phase deadline can be
+/// placed on that call's agent: any such deadline re-anchors at header
+/// time (see the phase-timeout note above) and would re-bound the body,
+/// defeating the whole point of this function. So the leaked thread can
+/// only be reclaimed at process exit. `kprun mcp` is a long-lived stdio
+/// bridge — one `send_bounded` call per client JSON-RPC frame over the
+/// entire editor/client session — so repeated `--timeout` firings
+/// accumulate leaked threads for the remainder of the process's life.
+/// This is an accepted trade-off of the thread-bounding approach given
+/// ureq's per-call timeout model, not a short-lived-process non-issue.
 fn send_bounded(
     req: ureq::RequestBuilder<ureq::typestate::WithBody>,
     frame: String,
@@ -461,13 +469,26 @@ impl Session {
         });
     }
 
-    /// Best-effort session termination (spec: HTTP DELETE).
+    /// Best-effort session termination (spec: HTTP DELETE). The DELETE
+    /// response body is never read, so unlike the POST path there is no
+    /// body-cutting hazard in bounding the whole call: it gets its own
+    /// agent with `timeout_global` set to `header_timeout`, rather than
+    /// reusing `post_agent` (which deliberately carries no response/global
+    /// timeout so POST bodies stay unbounded). Without this, a server that
+    /// accepts the TCP connection but never answers the DELETE would hang
+    /// `req.call()` forever, blocking process exit indefinitely.
     pub fn shutdown(&self) {
         let sid = self.session_id();
         if sid.is_none() {
             return;
         }
-        let req = self.post_agent.delete(&self.url);
+        let delete_agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_global(Some(self.header_timeout))
+            .build()
+            .into();
+        let req = delete_agent.delete(&self.url);
         let req = apply_common_headers(req, &self.headers, &sid, &self.protocol_version());
         let _ = req.call();
     }
