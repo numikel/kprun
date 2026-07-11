@@ -15,6 +15,7 @@ mod import;
 mod init;
 mod list;
 mod mcp;
+mod reveal_master;
 mod run;
 mod set;
 mod unset;
@@ -71,6 +72,7 @@ pub fn dispatch(command: Commands) {
             allow_insecure_http,
             url,
         )),
+        Commands::RevealMaster => std::process::exit(reveal_master::execute()),
         Commands::Deinit => std::process::exit(deinit::execute()),
     }
 }

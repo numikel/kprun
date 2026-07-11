@@ -149,6 +149,8 @@ pub enum Commands {
         /// Remote MCP endpoint URL (supports {{FIELD}} substitution)
         url: String,
     },
+    /// Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
+    RevealMaster,
     /// Remove the stored master password for the current vault from the OS keychain
     Deinit,
 }
@@ -265,5 +267,12 @@ mod tests {
     fn init_force_requires_quick() {
         assert!(Cli::try_parse_from(["kprun", "init", "--force"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--force"]).is_ok());
+    }
+
+    #[test]
+    fn reveal_master_parses_with_no_arguments() {
+        let cli = Cli::try_parse_from(["kprun", "reveal-master"]).unwrap();
+        assert!(matches!(cli.command, Commands::RevealMaster));
+        assert!(Cli::try_parse_from(["kprun", "reveal-master", "extra"]).is_err());
     }
 }
