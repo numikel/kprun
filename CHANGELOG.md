@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-07-11
+
+See [docs/changelogs/v0.4.3.md](docs/changelogs/v0.4.3.md) for details.
+
+### Changed
+
+- Deprecated HTTP+SSE transport now emits warning when used; migrate to Streamable HTTP.
+
+### Fixed
+
+- MCP bridge legacy SSE fallback narrowed to HTTP 404/405 errors only.
+- Keyfile unlock error messages clarified for composite keyfile scenarios.
+
 ## [0.4.2] - 2026-07-11
 
 See [docs/changelogs/v0.4.2.md](docs/changelogs/v0.4.2.md) for details.

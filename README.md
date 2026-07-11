@@ -1,4 +1,4 @@
-# kprun v0.4.2
+# kprun v0.4.3
 
 [![CI](https://github.com/numikel/kprun/actions/workflows/ci.yml/badge.svg)](https://github.com/numikel/kprun/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
