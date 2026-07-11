@@ -127,8 +127,9 @@ cargo install --path crates/kprun
 ## Quick start
 
 ```bash
-# 1. Create vault (master password → OS keychain by default)
-kprun init
+# 1. Create vault — one command, no prompts. A master password is generated,
+#    stored in the OS keychain, and shown once on stdout.
+kprun init --quick
 
 # 2. Store secrets (entry title = service; fields = env vars)
 kprun set github GITHUB_TOKEN=ghp_xxx
@@ -140,10 +141,12 @@ kprun run github -- npx -y @modelcontextprotocol/server-github
 Windows (after `install.ps1`):
 
 ```powershell
-kprun init
+kprun init --quick
 kprun set github GITHUB_TOKEN=ghp_xxx
 kprun run github -- npx -y @modelcontextprotocol/server-github
 ```
+
+Prefer choosing your own master password (or a keyfile)? Run plain `kprun init` instead. Need the generated password later — e.g. to open the vault in KeePassXC? `kprun reveal-master` prints it from the OS keychain.
 
 ### Attach an existing KeePassXC database
 
@@ -322,7 +325,7 @@ Install script env vars are documented in `scripts/install.sh` and `scripts/inst
 ## CLI reference
 
 ```
-kprun init   [--db PATH] [--no-store] [--keyfile PATH]
+kprun init   [--db PATH] [--no-store] [--keyfile PATH] [--quick [--force]]
 kprun run    <entry> [entry2 ...] -- <command> [args...]
 kprun list   [--json]
 kprun get    <entry> [--keys] [--reveal]
@@ -332,12 +335,16 @@ kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
 kprun import <file> [--merge]
 kprun doctor [--mcp <entry>]
-kprun deinit
+kprun reveal-master
+kprun deinit [--delete-vault [--yes]]
 ```
 
 Notes:
 
 - `get` and `export` show key **names** by default; use `--reveal` only when you need values (stderr warning + audit).
+- `init --quick` generates a 128-bit master password, creates a password-only vault, and stores the password in the OS keychain; the password is printed **once** on stdout. `--force` overwrites an existing vault after interactive confirmation. `KPRUN_KEYFILE` is ignored with a warning.
+- `reveal-master` prints the stored master password to stdout (stderr warning + audit record) — pipe-friendly, e.g. `kprun reveal-master | clip`.
+- `deinit --delete-vault` deletes the keychain entry **and** the vault file after confirmation (`--yes` skips the prompt); the keyfile and audit log are never touched.
 - `run` inherits stdio to the child and writes **nothing** to stdout (MCP-safe).
 - `import` without `--merge` replaces vault content; structure-only dotenv exports are rejected to prevent accidental wipes.
 - Exit codes: `1` for DB not found, entry not found, unlock failed, DB locked; child exit code propagated; empty injection → `0` with stderr warning.
@@ -561,6 +568,7 @@ cargo test --all-features
 - Do not use `setx` or global shell profiles for API keys.
 - Pass only the entries a command needs: `kprun run openai -- python script.py`, not every secret at once.
 - `export --reveal` and `get --reveal` print values to the terminal — use deliberately.
+- `kprun reveal-master` joins the `--reveal` family: it prints the vault master password to stdout with a stderr warning and an audit record (`db_id` only, never the value) — use deliberately.
 - Inline `kprun set <entry> KEY=value` puts the secret in your **shell history** and in **process listings** (`ps`, Task Manager) while the command runs. For sensitive values prefer `kprun set <entry> --stdin` and type or pipe `KEY=value` lines (blank lines and `#` comments are skipped):
 
   ```bash
