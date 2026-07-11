@@ -42,8 +42,23 @@ pub fn test_env(db: &Path) -> [(&str, &str); 2] {
 
 /// Create a vault with one or more entries (title + custom field pairs).
 pub fn create_vault_with_entries(db: &Path, entries: &[(&str, &[(&str, &str)])]) {
+    create_vault_inner(db, None, entries);
+}
+
+/// Like `create_vault_with_entries`, but the vault key composes the master
+/// password with a keyfile generated at `keyfile`.
+pub fn create_vault_with_keyfile_entries(
+    db: &Path,
+    keyfile: &Path,
+    entries: &[(&str, &[(&str, &str)])],
+) {
+    kprun_core::unlock::generate_keyfile(keyfile).unwrap();
+    create_vault_inner(db, Some(keyfile), entries);
+}
+
+fn create_vault_inner(db: &Path, keyfile: Option<&Path>, entries: &[(&str, &[(&str, &str)])]) {
     let ctx = UnlockContext {
-        keyfile: None,
+        keyfile: keyfile.map(Path::to_path_buf),
         db_path: db.to_path_buf(),
     };
     let key = build_database_key(&ctx, test_support::vault_password()).unwrap();

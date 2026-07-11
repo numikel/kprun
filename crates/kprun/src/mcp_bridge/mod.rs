@@ -44,14 +44,14 @@ pub trait McpTransportImpl {
     ) -> Result<i32>;
 }
 
-/// Streamable HTTP only: a non-auth 4xx on initialize is a hard error.
+/// Streamable HTTP only: 404/405 on initialize is a hard error (no fallback).
 struct StreamableHttp;
 
 /// Deprecated HTTP+SSE only.
 struct LegacySse;
 
 /// Spec-mandated detection: probe Streamable HTTP, fall back to HTTP+SSE
-/// on a non-auth 4xx — a decorator around the streamable probe.
+/// on 404/405 — a decorator around the streamable probe.
 struct Auto;
 
 impl McpTransportImpl for StreamableHttp {
@@ -77,6 +77,10 @@ impl McpTransportImpl for LegacySse {
         first: String,
         lines: &mut dyn Iterator<Item = std::io::Result<String>>,
     ) -> Result<i32> {
+        eprintln!(
+            "kprun mcp: HTTP+SSE transport is deprecated (MCP 2024-11-05) \
+             and validated against mock servers only"
+        );
         legacy_sse::run(cfg, first, lines)
     }
 }
@@ -91,10 +95,11 @@ impl McpTransportImpl for Auto {
         match streamable::probe_and_run(cfg, first.clone(), lines)? {
             streamable::ProbeOutcome::Ran(code) => Ok(code),
             streamable::ProbeOutcome::FallbackToLegacy(status) => {
-                // MCP backwards compatibility: non-auth 4xx on the
+                // MCP backwards compatibility: 404/405 on the
                 // initialize POST → deprecated HTTP+SSE transport.
                 eprintln!(
-                    "kprun mcp: streamable HTTP rejected (HTTP {status}); falling back to HTTP+SSE"
+                    "kprun mcp: streamable HTTP rejected (HTTP {status}); \
+                     falling back to deprecated HTTP+SSE (validated against mock servers only)"
                 );
                 legacy_sse::run(cfg, first, lines)
             }

@@ -83,6 +83,14 @@ pub fn vault_id(db_path: &Path) -> String {
     path_digest_hex(db_path)[..16].to_string()
 }
 
+/// Open the configured keyfile, citing its path on failure — the bare io
+/// error ("file not found") is useless when KPRUN_KEYFILE silently points
+/// at the wrong location.
+fn open_keyfile(path: &Path) -> Result<File> {
+    File::open(path)
+        .map_err(|e| KprunError::Other(format!("cannot read keyfile '{}': {e}", path.display())))
+}
+
 pub fn unlock_master(
     _ctx: &UnlockContext,
     source: &dyn MasterPasswordSource,
@@ -139,7 +147,7 @@ pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<VaultKey> {
         KeyringOutcome::Found(pw) => build_database_key(ctx, &pw),
         KeyringOutcome::Recoverable => match &ctx.keyfile {
             Some(path) => {
-                let mut file = File::open(path)?;
+                let mut file = open_keyfile(path)?;
                 DatabaseKey::new()
                     .with_keyfile(&mut file)
                     .map(VaultKey::new)
@@ -154,7 +162,7 @@ pub fn unlock_noninteractive(ctx: &UnlockContext) -> Result<VaultKey> {
 pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<VaultKey> {
     let mut key = DatabaseKey::new().with_password(master);
     if let Some(path) = &ctx.keyfile {
-        let mut file = File::open(path)?;
+        let mut file = open_keyfile(path)?;
         key = key
             .with_keyfile(&mut file)
             .map_err(|e| KprunError::Other(e.to_string()))?;
