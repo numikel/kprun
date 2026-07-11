@@ -834,6 +834,12 @@ fn legacy_fallback_on_405_bridges_via_sse() {
         vec![INIT_RESULT, LIST_RESULT]
     );
 
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(
+        stderr.contains("deprecated"),
+        "auto-fallback must warn that HTTP+SSE is deprecated: {stderr}"
+    );
+
     let requests = server.requests.lock().unwrap();
     let legacy_posts: Vec<_> = requests
         .iter()
@@ -962,7 +968,8 @@ fn explicit_transport_sse_skips_streamable_probe() {
         .write_stdin(format!("{INIT}\n"))
         .assert()
         .success()
-        .stdout(format!("{INIT_RESULT}\n"));
+        .stdout(format!("{INIT_RESULT}\n"))
+        .stderr(predicates::str::contains("deprecated"));
 
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests[0].method, "GET"); // no streamable POST probe

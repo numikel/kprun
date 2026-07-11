@@ -77,6 +77,10 @@ impl McpTransportImpl for LegacySse {
         first: String,
         lines: &mut dyn Iterator<Item = std::io::Result<String>>,
     ) -> Result<i32> {
+        eprintln!(
+            "kprun mcp: HTTP+SSE transport is deprecated (MCP 2024-11-05) \
+             and validated against mock servers only"
+        );
         legacy_sse::run(cfg, first, lines)
     }
 }
@@ -94,7 +98,8 @@ impl McpTransportImpl for Auto {
                 // MCP backwards compatibility: 404/405 on the
                 // initialize POST → deprecated HTTP+SSE transport.
                 eprintln!(
-                    "kprun mcp: streamable HTTP rejected (HTTP {status}); falling back to HTTP+SSE"
+                    "kprun mcp: streamable HTTP rejected (HTTP {status}); \
+                     falling back to deprecated HTTP+SSE (validated against mock servers only)"
                 );
                 legacy_sse::run(cfg, first, lines)
             }
