@@ -16,7 +16,7 @@ pub enum InitOutcome {
     Ready(ureq::http::Response<ureq::Body>),
     /// 401/403 — auth failure; never triggers legacy fallback.
     Unauthorized(u16),
-    /// Other 4xx — pre-2025-03-26 server; caller may fall back to HTTP+SSE.
+    /// 404/405 — pre-2025-03-26 server; caller may fall back to HTTP+SSE.
     FallbackToLegacy(u16),
 }
 
@@ -177,7 +177,16 @@ impl Session {
         match status {
             200..=299 => Ok(InitOutcome::Ready(resp)),
             401 | 403 => Ok(InitOutcome::Unauthorized(status)),
-            400..=499 => Ok(InitOutcome::FallbackToLegacy(status)),
+            // MCP backwards compatibility names 404/405 as the signature
+            // of a pre-Streamable server. Any other 4xx (e.g. GitHub
+            // Copilot's 400 for an invalid bearer token) means the server
+            // understood the endpoint and rejected the request — a
+            // client/auth error, never an old server.
+            404 | 405 => Ok(InitOutcome::FallbackToLegacy(status)),
+            400..=499 => Err(KprunError::Other(format!(
+                "initialize failed: HTTP {status} — check credentials (--bearer/--header); \
+                 for a legacy HTTP+SSE server pass --transport sse"
+            ))),
             _ => Err(KprunError::Other(format!(
                 "initialize failed: HTTP {status}"
             ))),
@@ -534,7 +543,7 @@ pub fn run_with(
 pub enum ProbeOutcome {
     /// Initialize succeeded and the bridge ran to completion.
     Ran(i32),
-    /// Non-auth 4xx on initialize: the server predates Streamable HTTP.
+    /// 404/405 on initialize: the server predates Streamable HTTP.
     /// Nothing was forwarded; the caller decides (hard error vs legacy
     /// fallback).
     FallbackToLegacy(u16),

@@ -883,6 +883,48 @@ fn unauthorized_401_never_falls_back() {
 }
 
 #[test]
+fn bad_request_400_never_falls_back() {
+    // GitHub Copilot MCP answers an *invalid* bearer token with HTTP 400.
+    // That is a credentials problem, not a pre-Streamable server: the
+    // bridge must fail fast with a hint and never probe legacy SSE.
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|_| MockResponse::Empty {
+        status: 400,
+        headers: vec![],
+    });
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("check credentials"));
+
+    let requests = server.requests.lock().unwrap();
+    assert!(
+        requests.iter().all(|r| r.method == "POST"),
+        "legacy SSE fallback issued a GET: {:?}",
+        requests
+            .iter()
+            .map(|r| r.method.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(requests.len(), 1); // the initialize POST only — no retry
+}
+
+#[test]
 fn explicit_transport_sse_skips_streamable_probe() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");

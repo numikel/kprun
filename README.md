@@ -476,7 +476,7 @@ The `{{CONTEXT7_API_KEY}}` placeholder must match a custom field on the `context
 
 `kprun mcp` never prompts — it needs a non-interactive unlock path. Run `kprun init` first so the master password is cached in the OS keyring, or set `KPRUN_KEYFILE` (see [Automation and cron](#automation-and-cron)). Note the keyfile is a *second* key component, not a password replacement: for a vault protected by password + keyfile, the password must be in the keyring (do not use `--no-store` at `init`), otherwise non-interactive unlock fails with `Incorrect key`. Like `run`, it writes nothing but JSON-RPC frames to stdout; the audit log gets **one line when the bridge starts** (header names and URL host only, never token values) — not on each MCP tool call in that session.
 
-Auth troubleshooting: a missing token yields a clear `HTTP 401` error, but some servers (e.g. GitHub Copilot MCP) answer an *invalid* token with `HTTP 400`, which `--transport auto` treats as a transport mismatch and retries over legacy SSE before failing ([#36](https://github.com/numikel/kprun/issues/36)). If both attempts fail with 4xx right after `initialize`, check the token in your vault entry first.
+Auth troubleshooting: a missing token yields a clear `HTTP 401` error, and some servers (e.g. GitHub Copilot MCP) answer an *invalid* token with `HTTP 400` — both now fail fast with a credentials hint and never retry over legacy SSE. Automatic fallback to the deprecated HTTP+SSE transport happens only when the server answers `initialize` with `404`/`405` (the MCP spec's signature of a pre-Streamable server); for an unusual legacy server that responds otherwise, pass `--transport sse` explicitly.
 
 ## Automation and cron
 

@@ -122,7 +122,7 @@ Two-crate Cargo workspace:
 - `Vault::save` normalizes legacy KDBX4.0 minor version to 4.1 before persisting
 - Entry lookup is case-insensitive; duplicate titles return `KprunError::DuplicateEntry`
 - `--features test-hooks` must NOT be present in release binaries (bypasses password prompt)
-- `kprun mcp` stdout carries exclusively JSON-RPC frames; message bodies pass through byte-for-byte; 401/403 during transport detection never triggers legacy fallback
+- `kprun mcp` stdout carries exclusively JSON-RPC frames; message bodies pass through byte-for-byte; legacy fallback during transport detection is triggered only by HTTP 404/405 — any other status (including 400/401/403) never falls back
 
 ## Release process
 
