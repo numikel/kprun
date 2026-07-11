@@ -73,3 +73,16 @@ fn create_vault_inner(db: &Path, keyfile: Option<&Path>, entries: &[(&str, &[(&s
     }
     vault.save(key).unwrap();
 }
+
+/// Env for `--quick` / `reveal-master` tests: vault path + file-backed
+/// keystore dir (`KPRUN_TEST_KEYSTORE` seam). Deliberately does NOT set
+/// `KPRUN_TEST_MASTER`, which would bypass the keystore paths under test.
+pub fn quick_env(db: &Path, keystore: &Path) -> [(&'static str, String); 2] {
+    [
+        ("KPRUN_DB", db.to_str().unwrap().to_string()),
+        (
+            "KPRUN_TEST_KEYSTORE",
+            keystore.to_str().unwrap().to_string(),
+        ),
+    ]
+}

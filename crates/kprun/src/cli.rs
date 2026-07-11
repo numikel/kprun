@@ -26,6 +26,12 @@ pub enum Commands {
         /// Path to a key file; created if missing (default: KPRUN_KEYFILE)
         #[arg(long)]
         keyfile: Option<String>,
+        /// Non-interactive setup: generate a master password, create the vault, store it in the OS keychain, print it once
+        #[arg(long, conflicts_with_all = ["keyfile", "no_store"])]
+        quick: bool,
+        /// Overwrite an existing vault (asks for confirmation)
+        #[arg(long, requires = "quick")]
+        force: bool,
     },
     /// Inject vault secrets into a child process
     Run {
@@ -245,5 +251,19 @@ mod tests {
         assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1", "--stdin"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "set", "e", "--stdin"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1"]).is_ok());
+    }
+
+    #[test]
+    fn init_quick_conflicts_with_keyfile_and_no_store() {
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--keyfile", "k"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--no-store"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--db", "x.kdbx"]).is_ok());
+    }
+
+    #[test]
+    fn init_force_requires_quick() {
+        assert!(Cli::try_parse_from(["kprun", "init", "--force"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--force"]).is_ok());
     }
 }

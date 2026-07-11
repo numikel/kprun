@@ -25,7 +25,9 @@ pub fn dispatch(command: Commands) {
             db,
             no_store,
             keyfile,
-        } => std::process::exit(init::execute(db, no_store, keyfile)),
+            quick,
+            force,
+        } => std::process::exit(init::execute(db, no_store, keyfile, quick, force)),
         Commands::Run {
             entries,
             command,
@@ -117,6 +119,44 @@ fn warn_secret_display() {
     eprintln!("WARNING: secret values are displayed in the terminal");
 }
 
+/// Ask `prompt` on stderr and read a y/N answer. Errors with `no_tty_error`
+/// when stdin is not a terminal — destructive actions are never confirmed
+/// implicitly by piped input.
+fn confirm_on_tty(prompt: &str, no_tty_error: &str) -> Result<bool> {
+    use std::io::{BufRead, IsTerminal, Write};
+    if !std::io::stdin().is_terminal() {
+        return Err(kprun_core::KprunError::Other(no_tty_error.to_string()));
+    }
+    eprint!("{prompt} ");
+    std::io::stderr().flush().ok();
+    let mut line = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .map_err(kprun_core::KprunError::Io)?;
+    Ok(is_yes(&line))
+}
+
+/// Only a literal trimmed `y` confirms — the [y/N] default is No.
+fn is_yes(line: &str) -> bool {
+    line.trim() == "y"
+}
+
 fn audit_access(cfg: &Config, record: AuditRecord) -> Result<()> {
     log_access(cfg, &record)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_yes;
+
+    #[test]
+    fn only_bare_y_confirms() {
+        assert!(is_yes("y\n"));
+        assert!(is_yes(" y \r\n"));
+        assert!(!is_yes("Y\n"));
+        assert!(!is_yes("yes\n"));
+        assert!(!is_yes("\n"));
+        assert!(!is_yes("n\n"));
+    }
 }
