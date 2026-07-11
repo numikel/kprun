@@ -262,6 +262,25 @@ pub fn generate_keyfile(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 128-bit random master password for `init --quick`, formatted as 8
+/// dash-separated groups of 4 lowercase hex chars (39 chars) — readable
+/// enough to retype into KeePassXC.
+pub fn generate_master_password() -> Zeroizing<String> {
+    use std::fmt::Write;
+
+    use rand::Rng;
+    let mut bytes = Zeroizing::new([0u8; 16]);
+    rand::rng().fill_bytes(&mut *bytes);
+    let mut out = Zeroizing::new(String::with_capacity(39));
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && i % 2 == 0 {
+            out.push('-');
+        }
+        write!(out, "{b:02x}").expect("writing to a String cannot fail");
+    }
+    out
+}
+
 /// File-backed keystore for integration tests: one file per keychain
 /// account inside `KPRUN_TEST_KEYSTORE`. Compiled only with `test-hooks`,
 /// so release binaries contain no trace of this path.
@@ -436,5 +455,24 @@ mod tests {
             err,
             KprunError::UnlockFailed | KprunError::Keyring(_)
         ));
+    }
+
+    #[test]
+    fn generated_master_password_has_expected_format() {
+        let pw = generate_master_password();
+        assert_eq!(pw.len(), 39);
+        let groups: Vec<&str> = pw.split('-').collect();
+        assert_eq!(groups.len(), 8);
+        for g in groups {
+            assert_eq!(g.len(), 4);
+            assert!(g
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        }
+    }
+
+    #[test]
+    fn generated_master_passwords_are_unique() {
+        assert_ne!(*generate_master_password(), *generate_master_password());
     }
 }
