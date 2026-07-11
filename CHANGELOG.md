@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-07-11
+
+See [docs/changelogs/v0.4.2.md](docs/changelogs/v0.4.2.md) for details.
+
+### Changed
+
+- MCP bridge transport abstraction via `McpTransportImpl` trait; SSE buffer optimization.
+- Context7 header expectations and legacy POST body forwarding documented.
+
+### Fixed
+
+- MCP bridge shutdown timeout bounds and server-stream cleanup.
+- Notifications/initialized message replay on session re-init; response body timeout exemptions.
+- MCP-Protocol-Version header negotiation on transport initiation/shutdown.
+
 ## [0.4.1] - 2026-07-09
 
 See [docs/changelogs/v0.4.1.md](docs/changelogs/v0.4.1.md) for details.
