@@ -113,7 +113,10 @@ fn run_quick(db: Option<String>, force: bool) -> Result<()> {
     create_vault(&db_path, db_key, "kprun")?;
 
     ui::step(3, 3, "Storing master password in OS keychain");
-    store_master_in_keystore(&db_path, &master)?;
+    if let Err(e) = store_master_in_keystore(&db_path, &master) {
+        let _ = std::fs::remove_file(&db_path);
+        return Err(e);
+    }
 
     ui::success(&format!("Vault ready at {}", db_path.display()));
     ui::info("(shown once — save it for KeePassXC; retrieve later with 'kprun reveal-master')");
