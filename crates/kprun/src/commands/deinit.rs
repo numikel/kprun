@@ -40,6 +40,13 @@ fn run(delete_vault: bool, yes: bool) -> Result<()> {
     }
 
     // The keyfile and access.log are never touched.
+    //
+    // Order matters: delete the keychain entry BEFORE removing the file. The
+    // per-vault account name is a SHA-256 of the *canonicalized* db path, and
+    // canonicalization only resolves while the file still exists. Removing the
+    // file first would make the account hash fall back to the raw path, so the
+    // delete would target a different account and silently orphan the real
+    // entry. Do not reorder these two operations.
     delete_master_from_keystore(&cfg.db_path)?;
     match std::fs::remove_file(&cfg.db_path) {
         Ok(()) => ui::success(&format!("Deleted vault file {}", cfg.db_path.display())),
