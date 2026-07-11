@@ -152,7 +152,14 @@ pub enum Commands {
     /// Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
     RevealMaster,
     /// Remove the stored master password for the current vault from the OS keychain
-    Deinit,
+    Deinit {
+        /// Also delete the vault file itself (asks for confirmation)
+        #[arg(long)]
+        delete_vault: bool,
+        /// Skip the confirmation prompt
+        #[arg(long, requires = "delete_vault")]
+        yes: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -274,5 +281,13 @@ mod tests {
         let cli = Cli::try_parse_from(["kprun", "reveal-master"]).unwrap();
         assert!(matches!(cli.command, Commands::RevealMaster));
         assert!(Cli::try_parse_from(["kprun", "reveal-master", "extra"]).is_err());
+    }
+
+    #[test]
+    fn deinit_yes_requires_delete_vault() {
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--yes"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault", "--yes"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit"]).is_ok());
     }
 }

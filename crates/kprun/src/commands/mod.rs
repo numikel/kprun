@@ -73,7 +73,9 @@ pub fn dispatch(command: Commands) {
             url,
         )),
         Commands::RevealMaster => std::process::exit(reveal_master::execute()),
-        Commands::Deinit => std::process::exit(deinit::execute()),
+        Commands::Deinit { delete_vault, yes } => {
+            std::process::exit(deinit::execute(delete_vault, yes))
+        }
     }
 }
 
