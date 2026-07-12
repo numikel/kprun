@@ -143,6 +143,25 @@ On Windows or macOS `/tmp` vaults, re-run `kprun init` after updating to re-stor
 
 Download latest from [GitHub Releases](https://github.com/numikel/kprun/releases), verify checksum, replace executable.
 
+### Troubleshooting updates
+
+**Windows: "access denied" or "failed to remove file"**
+
+The executable may be locked by an antivirus, file system cache, or running process:
+
+```powershell
+# Kill any running kprun process
+Get-Process kprun -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Remove the old binary manually
+Remove-Item -Path "$env:USERPROFILE\.cargo\bin\kprun.exe" -Force -ErrorAction SilentlyContinue
+
+# Retry installation
+cargo install --git https://github.com/numikel/kprun --force
+```
+
+If `cargo clean && cargo install --path crates/kprun` still fails, wait 10–15 seconds (antivirus quarantine) and retry.
+
 ## Quick start
 
 ```bash
