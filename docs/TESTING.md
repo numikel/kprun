@@ -266,11 +266,16 @@ kill $MCP_PID
 ### Remove test vault and keychain entries
 
 ```bash
+# Unset environment variables
+unset KPRUN_DB KPRUN_KEYFILE
+
 # Linux / macOS
 rm -rf "$HOME/.kprun-test"
 rm -f /tmp/test-*.kdbx
 
 # Windows PowerShell
+Remove-Item -Env:KPRUN_DB -ErrorAction SilentlyContinue
+Remove-Item -Env:KPRUN_KEYFILE -ErrorAction SilentlyContinue
 Remove-Item -Path "$env:USERPROFILE\.kprun-test" -Recurse -Force
 
 # Clean up OS keychain manually or via:

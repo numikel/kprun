@@ -168,6 +168,8 @@ If `cargo clean && cargo install --path crates/kprun` still fails, wait 10–15 
 # 1. Create vault — one command, no prompts. A master password is generated,
 #    stored in the OS keychain, and shown once on stdout.
 kprun init --quick
+# ⚠️ SAVE THE MASTER PASSWORD PRINTED ABOVE — you'll need it to open the vault in KeePassXC.
+# Retrieve later with: kprun reveal-master
 
 # 2. Store secrets (entry title = service; fields = env vars)
 kprun set github GITHUB_TOKEN=ghp_xxx
@@ -180,11 +182,16 @@ Windows (after `install.ps1`):
 
 ```powershell
 kprun init --quick
+# ⚠️ SAVE THE MASTER PASSWORD PRINTED ABOVE (shown once for security)
+# Retrieve later with: kprun reveal-master
+
 kprun set github GITHUB_TOKEN=ghp_xxx
 kprun run github -- npx -y @modelcontextprotocol/server-github
 ```
 
-Prefer choosing your own master password (or a keyfile)? Run plain `kprun init` instead. Need the generated password later — e.g. to open the vault in KeePassXC? `kprun reveal-master` prints it from the OS keychain.
+**About the master password**: `kprun init --quick` generates a random password, **prints it once** (save it for KeePassXC access), and stores it securely in the OS keychain. You don't need to memorize it — it's automatically unlocked for `kprun run` and other commands. If you forget it, retrieve it anytime with `kprun reveal-master`.
+
+Prefer choosing your own master password (or a keyfile)? Run plain `kprun init` instead.
 
 ### Attach an existing KeePassXC database
 
