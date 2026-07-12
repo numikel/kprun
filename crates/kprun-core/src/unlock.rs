@@ -25,12 +25,7 @@ pub struct SystemUnlock<'a> {
 
 impl MasterPasswordSource for SystemUnlock<'_> {
     fn get_master(&self) -> Result<Zeroizing<String>> {
-        let entry = Entry::new(SERVICE, &keychain_account(self.db_path))?;
-        match entry.get_password() {
-            Ok(pw) => Ok(Zeroizing::new(pw)),
-            Err(keyring::v1::Error::NoEntry) => Err(KprunError::UnlockFailed),
-            Err(e) => Err(KprunError::Keyring(e)),
-        }
+        keystore_get(&keychain_account(self.db_path))
     }
 }
 
@@ -68,13 +63,32 @@ fn keychain_account(db_path: &Path) -> String {
     format!("master:{}", path_digest_hex(db_path))
 }
 
-/// Full lowercase-hex SHA-256 of the canonicalized db path (raw path on
-/// canonicalize failure). Shared by the keyring account name and `vault_id`.
+/// Full lowercase-hex SHA-256 of the *lexically* absolutized db path. Shared
+/// by the keyring account name and `vault_id`.
+///
+/// `std::path::absolute` never touches the filesystem, so the digest is
+/// identical whether or not the vault file currently exists. This is the whole
+/// contract behind `reveal-master` and `deinit --delete-vault`: both must
+/// resolve the same keychain account *after* the file is gone. An earlier
+/// version hashed `fs::canonicalize`, which resolves symlinks and (on Windows)
+/// prepends a `\\?\` verbatim prefix only while the file exists — so the
+/// account name silently changed the moment the file was deleted or moved.
 fn path_digest_hex(db_path: &Path) -> String {
     use sha2::{Digest, Sha256};
-    let canonical = std::fs::canonicalize(db_path).unwrap_or_else(|_| db_path.to_path_buf());
-    let digest = Sha256::digest(canonical.to_string_lossy().as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    let absolute = std::path::absolute(db_path).unwrap_or_else(|_| db_path.to_path_buf());
+    let digest = Sha256::digest(absolute.to_string_lossy().as_bytes());
+    hex(&digest)
+}
+
+/// Lowercase-hex encode a byte slice. Single source of the encoding used for
+/// the keychain account digest and the throwaway probe account name.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        write!(s, "{b:02x}").expect("writing to a String cannot fail");
+    }
+    s
 }
 
 /// Stable, non-identifying vault identifier for the audit log: the first 16
@@ -117,7 +131,15 @@ fn try_keyring(ctx: &UnlockContext) -> KeyringOutcome {
         },
     ) {
         Ok(pw) => KeyringOutcome::Found(pw),
+        // A missing entry or a keyring backend error both mean "fall through to
+        // the next source". Under `test-hooks` the file-backed keystore seam
+        // reports backend trouble as `Io` (a real keyring returns `Keyring(_)`);
+        // treat it identically so the test seam and production agree on the
+        // fallback path. In release builds `SystemUnlock` never yields `Io`
+        // here, so the extra arm cannot change production behaviour.
         Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => KeyringOutcome::Recoverable,
+        #[cfg(feature = "test-hooks")]
+        Err(KprunError::Io(_)) => KeyringOutcome::Recoverable,
         Err(e) => KeyringOutcome::Fatal(e),
     }
 }
@@ -170,14 +192,38 @@ pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<VaultKey>
     Ok(VaultKey::new(key))
 }
 
-pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE, &keychain_account(db_path))?;
-    entry.set_password(master)?;
+/// All keychain access funnels through `keystore_set` / `keystore_get` /
+/// `keystore_delete` so the test-hooks file-backed seam covers every caller
+/// (store, read, delete, has, probe) in one place.
+fn keystore_set(account: &str, value: &str) -> Result<()> {
+    #[cfg(feature = "test-hooks")]
+    if let Some(dir) = test_keystore::dir_from_env() {
+        return test_keystore::set(&dir, account, value);
+    }
+    let entry = Entry::new(SERVICE, account)?;
+    entry.set_password(value)?;
     Ok(())
 }
 
-pub fn delete_master_from_keystore(db_path: &Path) -> Result<()> {
-    let entry = Entry::new(SERVICE, &keychain_account(db_path))?;
+fn keystore_get(account: &str) -> Result<Zeroizing<String>> {
+    #[cfg(feature = "test-hooks")]
+    if let Some(dir) = test_keystore::dir_from_env() {
+        return test_keystore::get(&dir, account);
+    }
+    let entry = Entry::new(SERVICE, account)?;
+    match entry.get_password() {
+        Ok(pw) => Ok(Zeroizing::new(pw)),
+        Err(keyring::v1::Error::NoEntry) => Err(KprunError::UnlockFailed),
+        Err(e) => Err(KprunError::Keyring(e)),
+    }
+}
+
+fn keystore_delete(account: &str) -> Result<()> {
+    #[cfg(feature = "test-hooks")]
+    if let Some(dir) = test_keystore::dir_from_env() {
+        return test_keystore::delete(&dir, account);
+    }
+    let entry = Entry::new(SERVICE, account)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::v1::Error::NoEntry) => Ok(()),
@@ -185,10 +231,50 @@ pub fn delete_master_from_keystore(db_path: &Path) -> Result<()> {
     }
 }
 
+pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
+    keystore_set(&keychain_account(db_path), master)
+}
+
+/// Read the stored master password for `db_path` from the OS keychain.
+/// Returns `KprunError::UnlockFailed` when no entry is stored. Does not
+/// require the vault file to exist — the keychain is the source of truth, and
+/// `path_digest_hex` derives the account name lexically, so it is stable
+/// whether or not the file is present.
+pub fn read_master_from_keystore(db_path: &Path) -> Result<Zeroizing<String>> {
+    SystemUnlock { db_path }.get_master()
+}
+
+pub fn delete_master_from_keystore(db_path: &Path) -> Result<()> {
+    keystore_delete(&keychain_account(db_path))
+}
+
 pub fn keystore_has_master(db_path: &Path) -> bool {
-    Entry::new(SERVICE, &keychain_account(db_path))
-        .and_then(|e| e.get_password())
-        .is_ok()
+    keystore_get(&keychain_account(db_path)).is_ok()
+}
+
+/// Round-trip set → get → delete on a throwaway `probe:<random>` account to
+/// verify the OS keychain works before creating a vault whose password only
+/// the keychain will know. The vault's own `master:<digest>` entry is never
+/// touched, so a stale entry is never disturbed.
+pub fn probe_keystore() -> Result<()> {
+    use rand::Rng;
+    let mut suffix = [0u8; 8];
+    rand::rng().fill_bytes(&mut suffix);
+    let account = format!("probe:{}", hex(&suffix));
+    keystore_set(&account, "kprun-probe")?;
+    // Best-effort cleanup regardless of how the read went: a failed get/delete
+    // must not `?`-propagate before the entry is removed, or every failed probe
+    // orphans a `probe:<hex>` entry in the real keychain. The value is
+    // non-secret, but the litter is still avoidable.
+    let read_back = keystore_get(&account);
+    let _ = keystore_delete(&account);
+    let read_back = read_back?;
+    if read_back.as_str() != "kprun-probe" {
+        return Err(KprunError::Other(
+            "keychain probe read back a different value".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn generate_keyfile(path: &Path) -> Result<()> {
@@ -200,6 +286,67 @@ pub fn generate_keyfile(path: &Path) -> Result<()> {
     }
     crate::secure_fs::write_restricted(path, &bytes)?;
     Ok(())
+}
+
+/// 128-bit random master password for `init --quick`, formatted as 8
+/// dash-separated groups of 4 lowercase hex chars (39 chars) — readable
+/// enough to retype into KeePassXC.
+pub fn generate_master_password() -> Zeroizing<String> {
+    use std::fmt::Write;
+
+    use rand::Rng;
+    let mut bytes = Zeroizing::new([0u8; 16]);
+    rand::rng().fill_bytes(&mut *bytes);
+    let mut out = Zeroizing::new(String::with_capacity(39));
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && i % 2 == 0 {
+            out.push('-');
+        }
+        write!(out, "{b:02x}").expect("writing to a String cannot fail");
+    }
+    out
+}
+
+/// File-backed keystore for integration tests: one file per keychain
+/// account inside `KPRUN_TEST_KEYSTORE`. Compiled only with `test-hooks`,
+/// so release binaries contain no trace of this path.
+#[cfg(feature = "test-hooks")]
+mod test_keystore {
+    use std::path::{Path, PathBuf};
+
+    use zeroize::Zeroizing;
+
+    use crate::{KprunError, Result};
+
+    pub fn dir_from_env() -> Option<PathBuf> {
+        std::env::var_os("KPRUN_TEST_KEYSTORE").map(PathBuf::from)
+    }
+
+    /// ':' is reserved in Windows filenames; substitute it.
+    fn file(dir: &Path, account: &str) -> PathBuf {
+        dir.join(account.replace(':', "_"))
+    }
+
+    pub fn set(dir: &Path, account: &str, value: &str) -> Result<()> {
+        std::fs::create_dir_all(dir)?;
+        crate::secure_fs::write_restricted(&file(dir, account), value.as_bytes())
+    }
+
+    pub fn get(dir: &Path, account: &str) -> Result<Zeroizing<String>> {
+        match std::fs::read_to_string(file(dir, account)) {
+            Ok(v) => Ok(Zeroizing::new(v)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(KprunError::UnlockFailed),
+            Err(e) => Err(KprunError::Io(e)),
+        }
+    }
+
+    pub fn delete(dir: &Path, account: &str) -> Result<()> {
+        match std::fs::remove_file(file(dir, account)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(KprunError::Io(e)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +404,26 @@ mod tests {
         assert!(account["master:".len()..].starts_with(&vault_id(p)));
     }
 
+    #[test]
+    fn keychain_account_is_stable_across_file_existence() {
+        // The whole point of the lexical digest: `reveal-master` and `deinit`
+        // must resolve the same account before the file is created, while it
+        // exists, and after it is deleted. The old `fs::canonicalize` digest
+        // changed the moment the file appeared/vanished (Windows \\?\, macOS
+        // /tmp), silently orphaning the stored password.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("secrets.kdbx");
+
+        let before = keychain_account(&p);
+        std::fs::write(&p, b"x").unwrap();
+        let while_exists = keychain_account(&p);
+        std::fs::remove_file(&p).unwrap();
+        let after = keychain_account(&p);
+
+        assert_eq!(before, while_exists);
+        assert_eq!(while_exists, after);
+    }
+
     #[cfg(unix)]
     #[test]
     fn generate_keyfile_is_owner_only() {
@@ -302,5 +469,56 @@ mod tests {
             err,
             KprunError::NonInteractiveUnlock | KprunError::Keyring(_)
         ));
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn test_keystore_set_get_delete_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        assert!(matches!(
+            test_keystore::get(d, "master:0123abcd"),
+            Err(KprunError::UnlockFailed)
+        ));
+        test_keystore::set(d, "master:0123abcd", "s3cret").unwrap();
+        assert_eq!(
+            test_keystore::get(d, "master:0123abcd").unwrap().as_str(),
+            "s3cret"
+        );
+        test_keystore::delete(d, "master:0123abcd").unwrap();
+        // Deleting a missing entry is tolerated, mirroring keyring NoEntry.
+        test_keystore::delete(d, "master:0123abcd").unwrap();
+        assert!(test_keystore::get(d, "master:0123abcd").is_err());
+    }
+
+    #[test]
+    fn read_master_from_keystore_missing_entry_errors() {
+        // Fresh temp path has no keyring entry; headless CI may instead
+        // report a backend error — both are acceptable failures.
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_master_from_keystore(&dir.path().join("no-such.kdbx")).unwrap_err();
+        assert!(matches!(
+            err,
+            KprunError::UnlockFailed | KprunError::Keyring(_)
+        ));
+    }
+
+    #[test]
+    fn generated_master_password_has_expected_format() {
+        let pw = generate_master_password();
+        assert_eq!(pw.len(), 39);
+        let groups: Vec<&str> = pw.split('-').collect();
+        assert_eq!(groups.len(), 8);
+        for g in groups {
+            assert_eq!(g.len(), 4);
+            assert!(g
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        }
+    }
+
+    #[test]
+    fn generated_master_passwords_are_unique() {
+        assert_ne!(*generate_master_password(), *generate_master_password());
     }
 }

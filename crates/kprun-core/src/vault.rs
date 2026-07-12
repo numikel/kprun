@@ -97,6 +97,20 @@ pub fn open_vault(path: &Path, key: VaultKey, mode: OpenMode) -> Result<Vault> {
     })
 }
 
+/// Build an empty KeePass database with kprun's KDF settings. Shared by
+/// `create_vault` and `create_vault_atomic` so the two never drift.
+fn new_database(db_name: &str) -> Database {
+    let mut db = Database::new();
+    db.config.kdf_config = keepass::config::KdfConfig::Argon2id {
+        iterations: KDF_ITERATIONS,
+        memory: KDF_MEMORY_BYTES,
+        parallelism: KDF_PARALLELISM,
+        version: argon2::Version::Version13,
+    };
+    db.meta.database_name = Some(db_name.to_string());
+    db
+}
+
 pub fn create_vault(path: &Path, key: VaultKey, db_name: &str) -> Result<()> {
     if path.exists() {
         return Err(KprunError::Other(format!(
@@ -107,16 +121,45 @@ pub fn create_vault(path: &Path, key: VaultKey, db_name: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut db = Database::new();
-    db.config.kdf_config = keepass::config::KdfConfig::Argon2id {
-        iterations: KDF_ITERATIONS,
-        memory: KDF_MEMORY_BYTES,
-        parallelism: KDF_PARALLELISM,
-        version: argon2::Version::Version13,
-    };
-    db.meta.database_name = Some(db_name.to_string());
+    let db = new_database(db_name);
     let mut file = crate::secure_fs::create_restricted(path)?;
     db.save(&mut file, key.into_inner()).map_err(map_save_error)
+}
+
+/// Create a fresh vault at `dst`, atomically replacing any existing file there.
+///
+/// The new database is written to a sibling temp file first; `before_commit`
+/// then runs *while any pre-existing vault at `dst` is still intact*, and only
+/// if it succeeds is the temp file atomically renamed over `dst`. This ordering
+/// is what makes `init --quick --force` safe: the generated master password
+/// lives only in memory and (once `before_commit` stores it) the OS keychain,
+/// so committing the file before the keychain write succeeds could strand the
+/// user with an unopenable vault and no old one to fall back to. Any failure —
+/// writing the temp file, `before_commit`, or the rename — leaves the previous
+/// vault file untouched, so the user is never left with no usable vault.
+pub fn create_vault_atomic<F>(
+    dst: &Path,
+    key: VaultKey,
+    db_name: &str,
+    before_commit: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let dir = dst
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    let db = new_database(db_name);
+    db.save(tmp.as_file_mut(), key.into_inner())
+        .map_err(map_save_error)?;
+    // Old vault still in place here; on error `tmp` is dropped and deleted.
+    before_commit()?;
+    crate::secure_fs::persist_restricted(tmp, dst)
 }
 
 impl Vault {
@@ -320,6 +363,83 @@ mod tests {
         let id = vault.find_entry_by_title("GitHub").unwrap();
         let keys = vault.entry_custom_keys(id);
         assert_eq!(keys, vec!["GITHUB_TOKEN".to_string()]);
+    }
+
+    fn password_key(pw: &str) -> VaultKey {
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("unused.kdbx"),
+        };
+        build_database_key(&ctx, pw).unwrap()
+    }
+
+    #[test]
+    fn create_vault_atomic_creates_when_absent() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("v.kdbx");
+        let key = password_key("pw-new");
+
+        create_vault_atomic(&path, key.clone(), "kprun", || Ok(())).unwrap();
+
+        open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "no temp file may leak"
+        );
+    }
+
+    #[test]
+    fn create_vault_atomic_overwrites_existing_vault() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("v.kdbx");
+        let old = password_key("pw-old");
+        create_vault(&path, old.clone(), "kprun").unwrap();
+
+        let new = password_key("pw-new");
+        create_vault_atomic(&path, new.clone(), "kprun", || Ok(())).unwrap();
+
+        open_vault(&path, new, OpenMode::ReadOnly).unwrap();
+        assert!(
+            open_vault(&path, old, OpenMode::ReadOnly).is_err(),
+            "old key must no longer open the replaced vault"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn create_vault_atomic_preserves_existing_vault_when_before_commit_fails() {
+        // The finding-4 guarantee: if `before_commit` (e.g. the keychain store)
+        // fails, the pre-existing vault must be left completely untouched — the
+        // user is never stranded with no usable vault.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("v.kdbx");
+        let old = password_key("pw-old");
+        create_vault(&path, old.clone(), "kprun").unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let new = password_key("pw-new");
+        let err = create_vault_atomic(&path, new.clone(), "kprun", || {
+            Err(KprunError::Other("keychain store failed".into()))
+        })
+        .unwrap_err();
+        assert!(matches!(err, KprunError::Other(_)));
+
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "existing vault must be byte-identical after a failed commit"
+        );
+        open_vault(&path, old, OpenMode::ReadOnly).unwrap();
+        assert!(
+            open_vault(&path, new, OpenMode::ReadOnly).is_err(),
+            "the uncommitted replacement must not be openable"
+        );
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "the temp file must be cleaned up on failure"
+        );
     }
 
     #[test]

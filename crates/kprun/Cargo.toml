@@ -40,6 +40,21 @@ path = "../../tests/init_set_run.rs"
 required-features = ["test-hooks"]
 
 [[test]]
+name = "init_quick"
+path = "../../tests/init_quick.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "reveal_master"
+path = "../../tests/reveal_master.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "deinit_delete"
+path = "../../tests/deinit_delete.rs"
+required-features = ["test-hooks"]
+
+[[test]]
 name = "mcp_stdio"
 path = "../../tests/mcp_stdio.rs"
 required-features = ["test-hooks"]

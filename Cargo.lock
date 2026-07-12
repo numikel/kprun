@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "kprun"
-version = "0.4.1"
+version = "0.4.3"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "kprun-core"
-version = "0.4.1"
+version = "0.4.3"
 dependencies = [
  "chrono",
  "keepass",

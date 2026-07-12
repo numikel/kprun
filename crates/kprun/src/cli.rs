@@ -26,6 +26,12 @@ pub enum Commands {
         /// Path to a key file; created if missing (default: KPRUN_KEYFILE)
         #[arg(long)]
         keyfile: Option<String>,
+        /// Non-interactive setup: generate a master password, create the vault, store it in the OS keychain, print it once
+        #[arg(long, conflicts_with_all = ["keyfile", "no_store"])]
+        quick: bool,
+        /// Overwrite an existing vault (asks for confirmation)
+        #[arg(long, requires = "quick")]
+        force: bool,
     },
     /// Inject vault secrets into a child process
     Run {
@@ -143,8 +149,24 @@ pub enum Commands {
         /// Remote MCP endpoint URL (supports {{FIELD}} substitution)
         url: String,
     },
+    /// Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
+    RevealMaster {
+        /// Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+        #[arg(long)]
+        db: Option<String>,
+    },
     /// Remove the stored master password for the current vault from the OS keychain
-    Deinit,
+    Deinit {
+        /// Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+        #[arg(long)]
+        db: Option<String>,
+        /// Also delete the vault file itself (asks for confirmation)
+        #[arg(long)]
+        delete_vault: bool,
+        /// Skip the confirmation prompt
+        #[arg(long, requires = "delete_vault")]
+        yes: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -245,5 +267,44 @@ mod tests {
         assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1", "--stdin"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "set", "e", "--stdin"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1"]).is_ok());
+    }
+
+    #[test]
+    fn init_quick_conflicts_with_keyfile_and_no_store() {
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--keyfile", "k"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--no-store"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--db", "x.kdbx"]).is_ok());
+    }
+
+    #[test]
+    fn init_force_requires_quick() {
+        assert!(Cli::try_parse_from(["kprun", "init", "--force"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "init", "--quick", "--force"]).is_ok());
+    }
+
+    #[test]
+    fn reveal_master_parses_with_no_arguments() {
+        let cli = Cli::try_parse_from(["kprun", "reveal-master"]).unwrap();
+        assert!(matches!(cli.command, Commands::RevealMaster { db: None }));
+        assert!(Cli::try_parse_from(["kprun", "reveal-master", "extra"]).is_err());
+    }
+
+    #[test]
+    fn reveal_master_accepts_db() {
+        let cli = Cli::try_parse_from(["kprun", "reveal-master", "--db", "x.kdbx"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::RevealMaster { db: Some(_) }
+        ));
+    }
+
+    #[test]
+    fn deinit_yes_requires_delete_vault() {
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--yes"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault", "--yes"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--db", "x.kdbx"]).is_ok());
     }
 }
