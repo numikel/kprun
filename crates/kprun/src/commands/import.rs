@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::Path;
 
+use kprun_core::dotenv::parse_dotenv_value;
 use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
-use kprun_core::dotenv::parse_dotenv_value;
 use serde::Deserialize;
 
 use super::{mutate_vault, run_command};
@@ -219,8 +219,6 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     }
     parser.finish()
 }
-
-
 
 #[cfg(test)]
 mod tests {
