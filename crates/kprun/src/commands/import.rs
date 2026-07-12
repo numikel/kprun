@@ -6,7 +6,9 @@ use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
-use super::{mutate_vault, run_command};
+use kprun_core::audit::AuditRecord;
+
+use super::{audit_access, mutate_vault, run_command};
 use crate::ui;
 
 pub fn execute(file: String, merge: bool) -> i32 {
@@ -52,10 +54,23 @@ fn run(file: &str, merge: bool) -> Result<()> {
         ImportMode::Replace
     };
 
-    mutate_vault(|vault| {
+    let cfg = mutate_vault(|vault| {
         apply_import(vault, &entries, mode)?;
         Ok(())
     })?;
+
+    // Audit: all imported entry titles and key names, never values.
+    // A failed audit write warns and does not abort — the import already
+    // happened.
+    let titles: Vec<String> = entries.iter().map(|e| e.title.clone()).collect();
+    let keys: Vec<String> = entries
+        .iter()
+        .flat_map(|e| e.pairs.iter().map(|(k, _)| k.clone()))
+        .collect();
+    let record = AuditRecord::new(&cfg.db_path, titles, keys, Some("import".to_string()));
+    if let Err(e) = audit_access(&cfg, record) {
+        eprintln!("WARNING: failed to write audit log: {e}");
+    }
 
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };

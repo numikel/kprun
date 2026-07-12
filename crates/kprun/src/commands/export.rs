@@ -30,10 +30,14 @@ fn run(format: ExportFormat, stdout: bool, reveal: bool, output: Option<String>)
         ExportFormat::Dotenv => export_dotenv(&vault, &summaries, reveal)?,
     };
 
-    if reveal {
-        let titles: Vec<String> = summaries.iter().map(|e| e.title.clone()).collect();
-        let keys: Vec<String> = summaries.iter().flat_map(|e| e.keys.clone()).collect();
-        audit_access(&cfg, AuditRecord::new(&cfg.db_path, titles, keys, None))?;
+    // Audit every export run, not only --reveal; key names only. A failed
+    // audit write warns and does not abort.
+    let titles: Vec<String> = summaries.iter().map(|e| e.title.clone()).collect();
+    let keys: Vec<String> = summaries.iter().flat_map(|e| e.keys.clone()).collect();
+    let command = if reveal { "export --reveal" } else { "export" };
+    let record = AuditRecord::new(&cfg.db_path, titles, keys, Some(command.to_string()));
+    if let Err(e) = audit_access(&cfg, record) {
+        eprintln!("WARNING: failed to write audit log: {e}");
     }
 
     if stdout {
