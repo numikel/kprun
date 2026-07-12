@@ -3,6 +3,7 @@ use std::path::Path;
 
 use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
+use kprun_core::dotenv::parse_dotenv_value;
 use serde::Deserialize;
 
 use super::{mutate_vault, run_command};
@@ -219,37 +220,7 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
     parser.finish()
 }
 
-/// Parse a dotenv value, unquoting and unescaping when wrapped in double quotes.
-fn parse_dotenv_value(raw: &str) -> String {
-    let bytes = raw.as_bytes();
-    if bytes.len() >= 2 && bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"' {
-        unescape_dotenv_value(&raw[1..raw.len() - 1])
-    } else {
-        raw.to_string()
-    }
-}
 
-fn unescape_dotenv_value(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('\\') => out.push('\\'),
-                Some(other) => {
-                    out.push('\\');
-                    out.push(other);
-                }
-                None => out.push('\\'),
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
