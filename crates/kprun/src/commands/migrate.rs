@@ -43,6 +43,27 @@ fn run(
         eprintln!("WARNING: duplicate key '{key}' in {file}; last value wins");
     }
 
+    // Empty values cannot survive the KDBX round-trip: the keepass backend
+    // drops empty/whitespace-only field values on save+reload, so a stored
+    // empty key would silently vanish. Skip them with a warning instead.
+    let mut pairs: Vec<(String, String)> = Vec::with_capacity(parsed.pairs.len());
+    for (k, v) in parsed.pairs {
+        // The backend drops empty AND whitespace-only field values on the
+        // round-trip, so treat both as unstorable.
+        if v.trim().is_empty() {
+            eprintln!(
+                "WARNING: skipping key '{k}' in {file} (empty values are not supported by the vault)"
+            );
+        } else {
+            pairs.push((k, v));
+        }
+    }
+    if pairs.is_empty() {
+        return Err(KprunError::Other(format!(
+            "no non-empty KEY=value lines found in {file}"
+        )));
+    }
+
     // 2. Entry title: --entry or the directory-name default.
     let title = match entry {
         Some(t) => t,
@@ -51,10 +72,10 @@ fn run(
 
     // 3. Vault write. Merge-only semantics: migrate must never delete
     //    unrelated entries, so ImportMode::Replace is not used.
-    let key_names: Vec<String> = parsed.pairs.iter().map(|(k, _)| k.clone()).collect();
+    let key_names: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
     let import_entries = [ImportEntry {
         title: title.clone(),
-        pairs: parsed.pairs,
+        pairs,
     }];
     let cfg = mutate_vault(|vault| {
         match vault.find_entry_by_title(&title) {

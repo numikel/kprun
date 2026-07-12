@@ -123,6 +123,7 @@ Two-crate Cargo workspace:
 - Entry lookup is case-insensitive; duplicate titles return `KprunError::DuplicateEntry`
 - `--features test-hooks` must NOT be present in release binaries (bypasses password prompt)
 - `kprun mcp` stdout carries exclusively JSON-RPC frames; message bodies pass through byte-for-byte; legacy fallback during transport detection is triggered only by HTTP 404/405 — any other status (including 400/401/403) never falls back
+- Empty custom-field values are **not persistable**: the KDBX backend (keepass-rs) drops empty/whitespace-only field values on the save→reload round-trip, so a stored empty key silently vanishes. `migrate` skips empty values with a stderr warning; other write paths (`set`, `import`) inherit the backend's drop. Tracked for a proper fix (sentinel encoding or upstream).
 
 ## Release process
 
