@@ -6,13 +6,22 @@ use kprun_core::unlock::{
     build_database_key, generate_keyfile, generate_master_password, probe_keystore,
     store_master_in_keystore, unlock_with_fallback, UnlockContext,
 };
-use kprun_core::vault::{create_vault, open_vault, OpenMode};
+use kprun_core::vault::{create_vault, create_vault_atomic, open_vault, OpenMode};
 use kprun_core::{KprunError, Result};
 use zeroize::Zeroizing;
 
 use crate::ui;
 
 const MIN_MASTER_LEN: usize = 12;
+
+/// Onboarding hints printed after a fresh vault is created. Shared by the
+/// interactive (`create_new`) and `--quick` (`run_quick`) paths so the two
+/// never drift apart. `verify_existing` deliberately shows different hints.
+const POST_INIT_NEXT_STEPS: [&str; 3] = [
+    "kprun set github GITHUB_TOKEN=ghp_xxx",
+    "kprun run github -- npx @modelcontextprotocol/server-github",
+    "kprun doctor --mcp github",
+];
 
 use super::run_command;
 
@@ -99,33 +108,28 @@ fn run_quick(db: Option<String>, force: bool) -> Result<()> {
         &format!("Creating KeePass database at {}", db_path.display()),
     );
     cfg.ensure_parent_dirs(&db_path)?;
-    if force && db_path.exists() {
-        // create_vault refuses to overwrite; the user confirmed above and
-        // the keychain probe already succeeded.
-        std::fs::remove_file(&db_path)?;
-    }
     let master = generate_master_password();
     let ctx = UnlockContext {
         keyfile: None,
         db_path: db_path.clone(),
     };
     let db_key = build_database_key(&ctx, &master)?;
-    create_vault(&db_path, db_key, "kprun")?;
 
-    ui::step(3, 3, "Storing master password in OS keychain");
-    if let Err(e) = store_master_in_keystore(&db_path, &master) {
-        let _ = std::fs::remove_file(&db_path);
-        return Err(e);
-    }
+    // Atomic overwrite: the new vault is written to a temp sibling and only
+    // renamed into place after the keychain store succeeds. The generated
+    // master exists only here and in the keychain, so if the store fails we
+    // must not have already destroyed any existing vault — `create_vault_atomic`
+    // guarantees exactly that. `--force` overwrite is handled by the atomic
+    // rename, so no separate remove step is needed.
+    create_vault_atomic(&db_path, db_key, "kprun", || {
+        ui::step(3, 3, "Storing master password in OS keychain");
+        store_master_in_keystore(&db_path, &master)
+    })?;
 
     ui::success(&format!("Vault ready at {}", db_path.display()));
     ui::info("(shown once — save it for KeePassXC; retrieve later with 'kprun reveal-master')");
     println!("{}", master.as_str());
-    ui::next_steps(&[
-        "kprun set github GITHUB_TOKEN=ghp_xxx",
-        "kprun run github -- npx @modelcontextprotocol/server-github",
-        "kprun doctor --mcp github",
-    ]);
+    ui::next_steps(&POST_INIT_NEXT_STEPS);
     Ok(())
 }
 
@@ -183,11 +187,7 @@ fn create_new(cfg: &Config, db_path: &Path, ctx: &UnlockContext, no_store: bool)
     }
 
     ui::success(&format!("Vault ready at {}", db_path.display()));
-    ui::next_steps(&[
-        "kprun set github GITHUB_TOKEN=ghp_xxx",
-        "kprun run github -- npx @modelcontextprotocol/server-github",
-        "kprun doctor --mcp github",
-    ]);
+    ui::next_steps(&POST_INIT_NEXT_STEPS);
     Ok(())
 }
 

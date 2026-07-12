@@ -150,9 +150,16 @@ pub enum Commands {
         url: String,
     },
     /// Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
-    RevealMaster,
+    RevealMaster {
+        /// Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+        #[arg(long)]
+        db: Option<String>,
+    },
     /// Remove the stored master password for the current vault from the OS keychain
     Deinit {
+        /// Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+        #[arg(long)]
+        db: Option<String>,
         /// Also delete the vault file itself (asks for confirmation)
         #[arg(long)]
         delete_vault: bool,
@@ -279,8 +286,17 @@ mod tests {
     #[test]
     fn reveal_master_parses_with_no_arguments() {
         let cli = Cli::try_parse_from(["kprun", "reveal-master"]).unwrap();
-        assert!(matches!(cli.command, Commands::RevealMaster));
+        assert!(matches!(cli.command, Commands::RevealMaster { db: None }));
         assert!(Cli::try_parse_from(["kprun", "reveal-master", "extra"]).is_err());
+    }
+
+    #[test]
+    fn reveal_master_accepts_db() {
+        let cli = Cli::try_parse_from(["kprun", "reveal-master", "--db", "x.kdbx"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::RevealMaster { db: Some(_) }
+        ));
     }
 
     #[test]
@@ -289,5 +305,6 @@ mod tests {
         assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault", "--yes"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "deinit"]).is_ok());
+        assert!(Cli::try_parse_from(["kprun", "deinit", "--db", "x.kdbx"]).is_ok());
     }
 }

@@ -72,10 +72,12 @@ pub fn dispatch(command: Commands) {
             allow_insecure_http,
             url,
         )),
-        Commands::RevealMaster => std::process::exit(reveal_master::execute()),
-        Commands::Deinit { delete_vault, yes } => {
-            std::process::exit(deinit::execute(delete_vault, yes))
-        }
+        Commands::RevealMaster { db } => std::process::exit(reveal_master::execute(db)),
+        Commands::Deinit {
+            db,
+            delete_vault,
+            yes,
+        } => std::process::exit(deinit::execute(db, delete_vault, yes)),
     }
 }
 

@@ -63,13 +63,32 @@ fn keychain_account(db_path: &Path) -> String {
     format!("master:{}", path_digest_hex(db_path))
 }
 
-/// Full lowercase-hex SHA-256 of the canonicalized db path (raw path on
-/// canonicalize failure). Shared by the keyring account name and `vault_id`.
+/// Full lowercase-hex SHA-256 of the *lexically* absolutized db path. Shared
+/// by the keyring account name and `vault_id`.
+///
+/// `std::path::absolute` never touches the filesystem, so the digest is
+/// identical whether or not the vault file currently exists. This is the whole
+/// contract behind `reveal-master` and `deinit --delete-vault`: both must
+/// resolve the same keychain account *after* the file is gone. An earlier
+/// version hashed `fs::canonicalize`, which resolves symlinks and (on Windows)
+/// prepends a `\\?\` verbatim prefix only while the file exists — so the
+/// account name silently changed the moment the file was deleted or moved.
 fn path_digest_hex(db_path: &Path) -> String {
     use sha2::{Digest, Sha256};
-    let canonical = std::fs::canonicalize(db_path).unwrap_or_else(|_| db_path.to_path_buf());
-    let digest = Sha256::digest(canonical.to_string_lossy().as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    let absolute = std::path::absolute(db_path).unwrap_or_else(|_| db_path.to_path_buf());
+    let digest = Sha256::digest(absolute.to_string_lossy().as_bytes());
+    hex(&digest)
+}
+
+/// Lowercase-hex encode a byte slice. Single source of the encoding used for
+/// the keychain account digest and the throwaway probe account name.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        write!(s, "{b:02x}").expect("writing to a String cannot fail");
+    }
+    s
 }
 
 /// Stable, non-identifying vault identifier for the audit log: the first 16
@@ -112,7 +131,15 @@ fn try_keyring(ctx: &UnlockContext) -> KeyringOutcome {
         },
     ) {
         Ok(pw) => KeyringOutcome::Found(pw),
+        // A missing entry or a keyring backend error both mean "fall through to
+        // the next source". Under `test-hooks` the file-backed keystore seam
+        // reports backend trouble as `Io` (a real keyring returns `Keyring(_)`);
+        // treat it identically so the test seam and production agree on the
+        // fallback path. In release builds `SystemUnlock` never yields `Io`
+        // here, so the extra arm cannot change production behaviour.
         Err(KprunError::UnlockFailed) | Err(KprunError::Keyring(_)) => KeyringOutcome::Recoverable,
+        #[cfg(feature = "test-hooks")]
+        Err(KprunError::Io(_)) => KeyringOutcome::Recoverable,
         Err(e) => KeyringOutcome::Fatal(e),
     }
 }
@@ -210,9 +237,9 @@ pub fn store_master_in_keystore(db_path: &Path, master: &str) -> Result<()> {
 
 /// Read the stored master password for `db_path` from the OS keychain.
 /// Returns `KprunError::UnlockFailed` when no entry is stored. Does not
-/// require the vault file to exist — the keychain is the source of truth
-/// (`path_digest_hex` falls back to the raw path when canonicalization
-/// fails).
+/// require the vault file to exist — the keychain is the source of truth, and
+/// `path_digest_hex` derives the account name lexically, so it is stable
+/// whether or not the file is present.
 pub fn read_master_from_keystore(db_path: &Path) -> Result<Zeroizing<String>> {
     SystemUnlock { db_path }.get_master()
 }
@@ -233,16 +260,15 @@ pub fn probe_keystore() -> Result<()> {
     use rand::Rng;
     let mut suffix = [0u8; 8];
     rand::rng().fill_bytes(&mut suffix);
-    let account = format!(
-        "probe:{}",
-        suffix
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-    );
+    let account = format!("probe:{}", hex(&suffix));
     keystore_set(&account, "kprun-probe")?;
-    let read_back = keystore_get(&account)?;
-    keystore_delete(&account)?;
+    // Best-effort cleanup regardless of how the read went: a failed get/delete
+    // must not `?`-propagate before the entry is removed, or every failed probe
+    // orphans a `probe:<hex>` entry in the real keychain. The value is
+    // non-secret, but the litter is still avoidable.
+    let read_back = keystore_get(&account);
+    let _ = keystore_delete(&account);
+    let read_back = read_back?;
     if read_back.as_str() != "kprun-probe" {
         return Err(KprunError::Other(
             "keychain probe read back a different value".into(),
@@ -376,6 +402,26 @@ mod tests {
         assert!(account.starts_with("master:"));
         assert_eq!(account.len(), "master:".len() + 64);
         assert!(account["master:".len()..].starts_with(&vault_id(p)));
+    }
+
+    #[test]
+    fn keychain_account_is_stable_across_file_existence() {
+        // The whole point of the lexical digest: `reveal-master` and `deinit`
+        // must resolve the same account before the file is created, while it
+        // exists, and after it is deleted. The old `fs::canonicalize` digest
+        // changed the moment the file appeared/vanished (Windows \\?\, macOS
+        // /tmp), silently orphaning the stored password.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("secrets.kdbx");
+
+        let before = keychain_account(&p);
+        std::fs::write(&p, b"x").unwrap();
+        let while_exists = keychain_account(&p);
+        std::fs::remove_file(&p).unwrap();
+        let after = keychain_account(&p);
+
+        assert_eq!(before, while_exists);
+        assert_eq!(while_exists, after);
     }
 
     #[cfg(unix)]

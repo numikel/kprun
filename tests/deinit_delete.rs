@@ -85,10 +85,16 @@ fn deinit_delete_vault_missing_file_is_note_not_error() {
         .success()
         .stderr(predicates::str::contains("not found (nothing to delete)"));
 
-    // NOTE: no assertion on the keystore dir here. The keychain account is
-    // derived from the *canonicalized* db path (computed while the file
-    // existed); once the file is gone, canonicalization falls back to the
-    // raw path, which may differ (Windows \\?\ prefix, macOS /tmp symlink),
-    // so the stored entry may legitimately survive as a NoEntry-tolerated
-    // orphan — which is exactly the behavior this test exercises.
+    // The keychain account is derived lexically (std::path::absolute), so it is
+    // identical whether or not the vault file exists. deinit therefore still
+    // removes the stored entry even though the file was already gone. This is
+    // the regression guard for the old canonicalize-based digest, which fell
+    // back to a different (raw-path) account once the file vanished and left
+    // the entry orphaned — notably on Windows (\\?\ prefix) and macOS (/tmp
+    // symlink).
+    assert_eq!(
+        std::fs::read_dir(&ks).unwrap().count(),
+        0,
+        "keystore entry must be removed even when the vault file is already gone"
+    );
 }

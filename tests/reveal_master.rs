@@ -47,6 +47,52 @@ fn reveal_master_prints_the_quick_password() {
 }
 
 #[test]
+fn reveal_master_db_flag_targets_the_custom_vault() {
+    // `init --quick --db <custom>` stores under the custom path's keychain
+    // account; `reveal-master --db <custom>` must retrieve it, while a plain
+    // `reveal-master` (which looks at the default KPRUN_DB path) must not.
+    let dir = tempfile::tempdir().unwrap();
+    let default_db = dir.path().join("secrets.kdbx");
+    let custom_db = dir.path().join("custom.kdbx");
+    let ks = dir.path().join("keystore");
+
+    let init_out = kprun_cmd()
+        .envs(quick_env(&default_db, &ks))
+        .args(["init", "--quick", "--db", custom_db.to_str().unwrap()])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let password = String::from_utf8(init_out).unwrap();
+    let password = password.trim_end_matches(['\r', '\n']).to_string();
+
+    // With --db the custom vault's password is found.
+    let reveal_out = kprun_cmd()
+        .envs(quick_env(&default_db, &ks))
+        .args(["reveal-master", "--db", custom_db.to_str().unwrap()])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        String::from_utf8(reveal_out)
+            .unwrap()
+            .trim_end_matches(['\r', '\n']),
+        password
+    );
+
+    // Without --db it looks at the default path, which was never initialized.
+    kprun_cmd()
+        .envs(quick_env(&default_db, &ks))
+        .args(["reveal-master"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("No master password stored"));
+}
+
+#[test]
 fn reveal_master_without_stored_password_fails_clearly() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
