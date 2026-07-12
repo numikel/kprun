@@ -6,6 +6,7 @@ docs/*
 !docs/kprun.gif
 !docs/changelogs/
 !docs/changelogs/**
+!docs/TESTING.md
 .claude/
 .superpowers/
 .cursor/
