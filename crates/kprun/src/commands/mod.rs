@@ -15,6 +15,7 @@ mod import;
 mod init;
 mod list;
 mod mcp;
+mod migrate;
 mod reveal_master;
 mod run;
 mod set;
@@ -54,6 +55,13 @@ pub fn dispatch(command: Commands) {
             output,
         } => std::process::exit(export::execute(format, stdout, reveal, output)),
         Commands::Import { file, merge } => std::process::exit(import::execute(file, merge)),
+        Commands::Migrate {
+            file,
+            entry,
+            merge,
+            gitignore,
+            delete,
+        } => std::process::exit(migrate::execute(file, entry, merge, gitignore, delete)),
         Commands::Doctor { mcp, command } => std::process::exit(doctor::execute(mcp, command)),
         Commands::Mcp {
             entry,
@@ -111,14 +119,16 @@ where
     }
 }
 
-fn mutate_vault<F>(f: F) -> Result<()>
+/// Unlock read-write, apply `f`, save atomically. Returns the `Config` so
+/// callers can write audit records against the same vault/log paths.
+fn mutate_vault<F>(f: F) -> Result<Config>
 where
     F: FnOnce(&mut Vault) -> Result<()>,
 {
-    let (_cfg, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
+    let (cfg, mut vault, db_key) = unlock_vault(OpenMode::ReadWrite)?;
     f(&mut vault)?;
     vault.save(db_key)?;
-    Ok(())
+    Ok(cfg)
 }
 
 fn warn_secret_display() {

@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal};
+use std::io::{self, BufRead, IsTerminal, Write};
 
 /// Whether decorative CLI output (banner, steps) should be shown.
 pub fn is_interactive() -> bool {
@@ -67,5 +67,63 @@ pub fn next_steps(lines: &[&str]) {
     eprintln!("Next steps:");
     for line in lines {
         eprintln!("  {line}");
+    }
+}
+
+/// Ask a yes/no question on stderr with a `[Y/n]` / `[y/N]` suffix derived
+/// from `default`, reading the answer from stdin. Empty input, EOF, and
+/// unrecognized input fall back to `default`. Callers are responsible for
+/// TTY detection — this always reads.
+pub fn confirm(question: &str, default: bool) -> io::Result<bool> {
+    confirm_from(&mut io::stdin().lock(), question, default)
+}
+
+fn confirm_from<R: BufRead>(reader: &mut R, question: &str, default: bool) -> io::Result<bool> {
+    let suffix = if default { "[Y/n]" } else { "[y/N]" };
+    eprint!("{question} {suffix} ");
+    io::stderr().flush().ok();
+    let mut line = String::new();
+    if reader.read_line(&mut line)? == 0 {
+        return Ok(default); // EOF
+    }
+    Ok(match line.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        _ => default,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::confirm_from;
+
+    #[test]
+    fn accepts_yes_variants_case_insensitive() {
+        assert!(confirm_from(&mut "y\n".as_bytes(), "Q?", false).unwrap());
+        assert!(confirm_from(&mut "YES\n".as_bytes(), "Q?", false).unwrap());
+    }
+
+    #[test]
+    fn accepts_no_variants_case_insensitive() {
+        assert!(!confirm_from(&mut "n\n".as_bytes(), "Q?", true).unwrap());
+        assert!(!confirm_from(&mut "No\n".as_bytes(), "Q?", true).unwrap());
+    }
+
+    #[test]
+    fn empty_line_returns_default() {
+        assert!(confirm_from(&mut "\n".as_bytes(), "Q?", true).unwrap());
+        assert!(!confirm_from(&mut "\n".as_bytes(), "Q?", false).unwrap());
+    }
+
+    #[test]
+    fn garbage_input_returns_default() {
+        assert!(confirm_from(&mut "banana\n".as_bytes(), "Q?", true).unwrap());
+        assert!(!confirm_from(&mut "banana\n".as_bytes(), "Q?", false).unwrap());
+    }
+
+    #[test]
+    fn eof_returns_default() {
+        assert!(confirm_from(&mut "".as_bytes(), "Q?", true).unwrap());
+        assert!(!confirm_from(&mut "".as_bytes(), "Q?", false).unwrap());
     }
 }
