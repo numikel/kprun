@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-12
+
+See [docs/changelogs/v0.5.0.md](docs/changelogs/v0.5.0.md) for details.
+
+### Added
+
+- `kprun init --quick` — non-interactive onboarding with master password generation and keychain storage.
+- `kprun reveal-master` — retrieve stored master password from OS keychain.
+- `kprun deinit --delete-vault` — remove vault file and keychain entry.
+- `--db` flag on `reveal-master` and `deinit` for non-standard vault paths.
+
+### Changed
+
+- OS keychain account name now derived from lexical path (SHA-256) instead of `fs::canonicalize`.
+
+### Fixed
+
+- Atomic vault creation in `init --quick --force` prevents partial failures.
+- Vault file deletion before keychain cleanup in `deinit --delete-vault`.
+- Keychain error messages now actionable instead of raw backend strings.
+
+### ⚠️ BREAKING CHANGES
+
+- OS keychain account name changes for Windows vaults and macOS `/tmp` vaults; users must re-run `kprun init`.
+
 ## [0.4.3] - 2026-07-11
 
 See [docs/changelogs/v0.4.3.md](docs/changelogs/v0.4.3.md) for details.
