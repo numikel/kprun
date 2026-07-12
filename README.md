@@ -124,6 +124,25 @@ Or install into Cargo bin dir:
 cargo install --path crates/kprun
 ```
 
+## Updating
+
+### From previous v0.4.x
+
+```bash
+# Cargo
+cargo install --git https://github.com/numikel/kprun --force
+
+# Or re-run install script
+curl -fsSL https://raw.githubusercontent.com/numikel/kprun/refs/heads/main/scripts/install.sh | sh
+```
+
+**v0.5.0 breaking change**: OS keychain account name changed (lexical path → SHA-256).
+On Windows or macOS `/tmp` vaults, re-run `kprun init` after updating to re-store the master password.
+
+### Binary updates
+
+Download latest from [GitHub Releases](https://github.com/numikel/kprun/releases), verify checksum, replace executable.
+
 ## Quick start
 
 ```bash
