@@ -128,7 +128,7 @@ fn run_quick(db: Option<String>, force: bool) -> Result<()> {
 
     ui::success(&format!("Vault ready at {}", db_path.display()));
     ui::info("(shown once — save it for KeePassXC; retrieve later with 'kprun reveal-master')");
-    println!("{}", master.as_str());
+    ui::print_once_stdout(master.as_str());
     ui::next_steps(&POST_INIT_NEXT_STEPS);
     Ok(())
 }

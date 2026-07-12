@@ -55,6 +55,22 @@ pub fn hint(message: &str) {
     eprintln!("hint: {message}");
 }
 
+/// Print a one-time credential on stdout with stderr spacing when interactive.
+/// Stdout stays a single line (pipe-safe); bold is used only when stdout is a TTY.
+pub fn print_once_stdout(value: &str) {
+    if is_interactive() {
+        eprintln!();
+    }
+    if io::stdout().is_terminal() && is_interactive() {
+        println!("\x1b[1m{value}\x1b[0m");
+    } else {
+        println!("{value}");
+    }
+    if is_interactive() {
+        eprintln!();
+    }
+}
+
 /// Copy-pasteable next steps after setup commands.
 pub fn next_steps(lines: &[&str]) {
     if !is_interactive() {
