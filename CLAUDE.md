@@ -124,6 +124,8 @@ Two-crate Cargo workspace:
 - `--features test-hooks` must NOT be present in release binaries (bypasses password prompt)
 - `kprun mcp` stdout carries exclusively JSON-RPC frames; message bodies pass through byte-for-byte; legacy fallback during transport detection is triggered only by HTTP 404/405 — any other status (including 400/401/403) never falls back
 - Empty custom-field values are **not persistable**: the KDBX backend (keepass-rs) drops empty/whitespace-only field values on the save→reload round-trip, so a stored empty key silently vanishes. `migrate` skips empty values with a stderr warning; other write paths (`set`, `import`) inherit the backend's drop. Tracked for a proper fix (sentinel encoding or upstream).
+- Audit-write failure handling is **asymmetric by design**. `run`, `mcp`, and `reveal-master` fail closed (`?`): the record is written *before* any secret is disclosed, so a failed write blocks the disclosure. `get` also propagates, but audits *after* printing — only its exit code changes, not the disclosure. `export`, `import`, and `migrate` warn on stderr and continue: `import`/`migrate` disclose nothing and the vault mutation already happened (aborting cannot undo it), while `export` audits before writing its output and therefore **can emit secrets with no audit record**. Changing that trade-off is a deliberate decision, not a bug to fix in passing.
+- `migrate --delete` removes the source file only after re-reading it and confirming it is byte-identical to what was imported: the parse happens before the vault unlock, which can block on an interactive master-password prompt, so anything written in that window was never imported and must not be destroyed.
 
 ## Release process
 

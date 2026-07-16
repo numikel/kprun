@@ -158,21 +158,46 @@ fn run(
 
     if delete {
         if repo_error.is_none() {
-            match std::fs::remove_file(path) {
-                Ok(()) => {
-                    audit_command.push_str(" --delete");
-                    ui::info(&format!("deleted {file}"));
-                }
-                Err(e) => {
+            // Only delete what was actually imported: the file was read before
+            // the vault unlock, which can block on an interactive
+            // master-password prompt. Anything written in that window never
+            // reached the vault, so deleting now would destroy it.
+            match source_unchanged(path, &content) {
+                Ok(true) => match std::fs::remove_file(path) {
+                    Ok(()) => {
+                        audit_command.push_str(" --delete");
+                        ui::info(&format!("deleted {file}"));
+                    }
+                    Err(e) => {
+                        ui::hint(&format!(
+                            "the file is still on disk; delete it manually or rerun: \
+                             kprun migrate {file} --entry {title} --merge --delete"
+                        ));
+                        repo_error = Some(KprunError::Io(e));
+                    }
+                },
+                Ok(false) => {
+                    eprintln!(
+                        "WARNING: {file} changed after it was read; NOT deleted \
+                         (the new content was never imported)"
+                    );
                     ui::hint(&format!(
-                        "the file is still on disk; delete it manually or rerun: \
+                        "import the current content and remove the file with: \
                          kprun migrate {file} --entry {title} --merge --delete"
                     ));
+                    repo_error = Some(KprunError::Other(format!(
+                        "{file} changed after it was read; refusing to delete"
+                    )));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "WARNING: cannot re-read {file} to confirm it is unchanged; NOT deleted"
+                    );
                     repo_error = Some(KprunError::Io(e));
                 }
             }
         } else {
-            eprintln!("WARNING: {file} NOT deleted because the .gitignore step failed");
+            eprintln!("WARNING: {file} NOT deleted because an earlier repo cleanup step failed");
         }
     } else {
         ui::info(&format!("{file} kept (use --delete to remove it)"));
@@ -194,6 +219,16 @@ fn run(
         }
         None => Ok(()),
     }
+}
+
+/// Whether `path` still holds exactly the bytes read at the start of the run.
+///
+/// Compares the content rather than the mtime: it needs no assumptions about
+/// clock skew or timestamp granularity, and `.env` files are small enough that
+/// an exact comparison is free. A checksum would only approximate the same
+/// answer.
+fn source_unchanged(path: &Path, original: &str) -> std::io::Result<bool> {
+    Ok(std::fs::read_to_string(path)? == original)
 }
 
 /// Directory-derived entry title: `repo/backend/.env` → `backend`.
@@ -290,6 +325,30 @@ mod tests {
     #[test]
     fn entry_title_uses_directory_when_home_unknown() {
         assert_eq!(entry_title_from(Path::new("/srv/api/.env"), None), "api");
+    }
+
+    #[test]
+    fn source_unchanged_true_for_untouched_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_path = dir.path().join(".env");
+        std::fs::write(&env_path, "A=1\n").unwrap();
+        assert!(source_unchanged(&env_path, "A=1\n").unwrap());
+    }
+
+    #[test]
+    fn source_unchanged_false_when_content_was_appended() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_path = dir.path().join(".env");
+        // The run imported "A=1\n"; a second line landed before the delete.
+        std::fs::write(&env_path, "A=1\nB=2\n").unwrap();
+        assert!(!source_unchanged(&env_path, "A=1\n").unwrap());
+    }
+
+    #[test]
+    fn source_unchanged_errors_when_file_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_path = dir.path().join(".env");
+        assert!(source_unchanged(&env_path, "A=1\n").is_err());
     }
 
     #[test]
