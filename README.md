@@ -124,6 +124,12 @@ Or install into Cargo bin dir:
 cargo install --path crates/kprun
 ```
 
+Or straight from Git, without cloning:
+
+```bash
+cargo install --git https://github.com/numikel/kprun
+```
+
 ## Updating
 
 ### From previous v0.4.x
