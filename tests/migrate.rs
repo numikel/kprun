@@ -270,19 +270,24 @@ fn migrate_gitignore_failure_skips_delete_and_explains_next_steps() {
         .args([
             "migrate",
             env_file.to_str().unwrap(),
+            "--entry",
+            "custom-name",
             "--gitignore",
             "--delete",
         ])
         .assert()
         .failure()
         .stderr(predicates::str::contains("NOT deleted"))
-        .stderr(predicates::str::contains("--merge"));
+        .stderr(predicates::str::contains("--merge"))
+        // The rerun hint must target the entry that now holds the keys, not
+        // the directory-derived default.
+        .stderr(predicates::str::contains("--entry custom-name"));
 
     // Destructive-last: the source file survives; the import happened.
     assert!(env_file.exists());
     kprun_cmd()
         .envs(test_env(&db))
-        .args(["get", "svc", "--keys"])
+        .args(["get", "custom-name", "--keys"])
         .assert()
         .success()
         .stdout(predicates::str::contains("TOKEN"));

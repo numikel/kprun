@@ -149,7 +149,7 @@ fn run(
                 };
                 ui::hint(&format!(
                     "secrets are already in the vault; fix the .gitignore problem, \
-                     then rerun: kprun migrate {file} --merge {rerun_flags}"
+                     then rerun: kprun migrate {file} --entry {title} --merge {rerun_flags}"
                 ));
                 repo_error = Some(e);
             }
@@ -166,7 +166,7 @@ fn run(
                 Err(e) => {
                     ui::hint(&format!(
                         "the file is still on disk; delete it manually or rerun: \
-                         kprun migrate {file} --merge --delete"
+                         kprun migrate {file} --entry {title} --merge --delete"
                     ));
                     repo_error = Some(KprunError::Io(e));
                 }
