@@ -23,15 +23,23 @@ function Write-Err([string]$Message) {
 }
 
 function Get-LatestVersion {
+    # Invoke-WebRequest -MaximumRedirection 0 throws without a .Response under
+    # Windows PowerShell 5.1, so read the redirect target via WebRequest instead.
     try {
-        $response = Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
-    } catch {
-        if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 'Redirect') {
-            $location = $_.Exception.Response.Headers['Location']
-            if ($location -match '/tag/([^/?#]+)') {
-                return $Matches[1]
-            }
+        $request = [System.Net.WebRequest]::Create("https://github.com/$Repo/releases/latest")
+        $request.Method = 'HEAD'
+        $request.AllowAutoRedirect = $false
+        $response = $request.GetResponse()
+        try {
+            $location = $response.Headers['Location']
+        } finally {
+            $response.Close()
         }
+        if ($location -match '/tag/([^/?#]+)') {
+            return $Matches[1]
+        }
+    } catch {
+        # Fall through to the GitHub API lookup below.
     }
 
     Write-Warn 'Redirect lookup failed, falling back to GitHub API...'
@@ -43,11 +51,13 @@ function Get-LatestVersion {
 }
 
 function Get-TargetTriple {
-    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    # RuntimeInformation::OSArchitecture silently evaluates to $null on hosts
+    # without .NET Framework 4.7.1+; PROCESSOR_ARCHITECTURE is always set.
+    $arch = $env:PROCESSOR_ARCHITEW6432
+    if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
     switch ($arch) {
-        'X64' { return 'x86_64-pc-windows-msvc' }
-        'Arm64' { Write-Err "Unsupported architecture: $arch" }
-        default { Write-Err "Unsupported architecture: $arch" }
+        'AMD64' { return 'x86_64-pc-windows-msvc' }
+        default { Write-Err "Unsupported architecture: '$arch' (only x86_64 Windows builds are published)" }
     }
 }
 
@@ -85,17 +95,15 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
   $minisigPath = "$ChecksumsPath.minisig"
   if ($KprunMinisignPubkey -ne 'RWQ...' -and (Get-Command minisign -ErrorAction SilentlyContinue)) {
     if (Test-Path $minisigPath) {
-      $pubFile = [System.IO.Path]::GetTempFileName()
-      try {
-        Set-Content -Path $pubFile -Value $KprunMinisignPubkey -NoNewline
-        & minisign -V -p $pubFile -m $ChecksumsPath
-        if ($LASTEXITCODE -ne 0) {
-          Write-Err 'minisign signature verification failed'
-        }
-        Write-Info 'minisign signature verified'
-      } finally {
-        Remove-Item -Path $pubFile -Force -ErrorAction SilentlyContinue
+      # -P takes the raw base64 key; a key *file* would also need the
+      # untrusted-comment header line, which a bare Set-Content omits.
+      # Out-Null keeps minisign's stdout from polluting the caller's return
+      # stream (Install-Kprun returns the installed binary path).
+      & minisign -V -P $KprunMinisignPubkey -m $ChecksumsPath | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Err 'minisign signature verification failed'
       }
+      Write-Info 'minisign signature verified'
     }
   }
 }
