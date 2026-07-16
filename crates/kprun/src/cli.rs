@@ -112,6 +112,23 @@ pub enum Commands {
         #[arg(long)]
         merge: bool,
     },
+    /// Migrate a plaintext project .env file into the vault
+    Migrate {
+        /// Path to a standard .env file (KEY=value lines)
+        file: String,
+        /// Vault entry title (default: name of the directory containing the file)
+        #[arg(long)]
+        entry: Option<String>,
+        /// Merge keys into an existing entry with this title
+        #[arg(long)]
+        merge: bool,
+        /// Add the file's name to .gitignore without asking
+        #[arg(long)]
+        gitignore: bool,
+        /// Delete the source file after a successful import
+        #[arg(long)]
+        delete: bool,
+    },
     /// Diagnose configuration and print an MCP config snippet
     Doctor {
         /// Print an MCP config JSON snippet for this vault entry instead of diagnostics
@@ -306,5 +323,62 @@ mod tests {
         assert!(Cli::try_parse_from(["kprun", "deinit", "--delete-vault"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "deinit"]).is_ok());
         assert!(Cli::try_parse_from(["kprun", "deinit", "--db", "x.kdbx"]).is_ok());
+    }
+
+    #[test]
+    fn migrate_parses_all_flags() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "migrate",
+            ".env",
+            "--entry",
+            "backend",
+            "--merge",
+            "--gitignore",
+            "--delete",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Migrate {
+                file,
+                entry,
+                merge,
+                gitignore,
+                delete,
+            } => {
+                assert_eq!(file, ".env");
+                assert_eq!(entry.as_deref(), Some("backend"));
+                assert!(merge);
+                assert!(gitignore);
+                assert!(delete);
+            }
+            _ => panic!("expected Commands::Migrate"),
+        }
+    }
+
+    #[test]
+    fn migrate_defaults_to_safe_flags() {
+        let cli = Cli::try_parse_from(["kprun", "migrate", ".env"]).unwrap();
+        match cli.command {
+            Commands::Migrate {
+                file,
+                entry,
+                merge,
+                gitignore,
+                delete,
+            } => {
+                assert_eq!(file, ".env");
+                assert!(entry.is_none());
+                assert!(!merge);
+                assert!(!gitignore);
+                assert!(!delete);
+            }
+            _ => panic!("expected Commands::Migrate"),
+        }
+    }
+
+    #[test]
+    fn migrate_requires_file() {
+        assert!(Cli::try_parse_from(["kprun", "migrate"]).is_err());
     }
 }

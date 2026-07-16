@@ -75,6 +75,11 @@ path = "../../tests/export_import.rs"
 required-features = ["test-hooks"]
 
 [[test]]
+name = "migrate"
+path = "../../tests/migrate.rs"
+required-features = ["test-hooks"]
+
+[[test]]
 name = "doctor"
 path = "../../tests/doctor.rs"
 required-features = ["test-hooks"]

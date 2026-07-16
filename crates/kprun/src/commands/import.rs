@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::Path;
 
+use kprun_core::dotenv::parse_dotenv_value;
 use kprun_core::import::{apply_import, ImportEntry, ImportMode};
 use kprun_core::{KprunError, Result};
 use serde::Deserialize;
 
-use super::{mutate_vault, run_command};
+use kprun_core::audit::AuditRecord;
+
+use super::{audit_access, mutate_vault, run_command};
 use crate::ui;
 
 pub fn execute(file: String, merge: bool) -> i32 {
@@ -51,10 +54,23 @@ fn run(file: &str, merge: bool) -> Result<()> {
         ImportMode::Replace
     };
 
-    mutate_vault(|vault| {
+    let cfg = mutate_vault(|vault| {
         apply_import(vault, &entries, mode)?;
         Ok(())
     })?;
+
+    // Audit: all imported entry titles and key names, never values.
+    // A failed audit write warns and does not abort — the import already
+    // happened.
+    let titles: Vec<String> = entries.iter().map(|e| e.title.clone()).collect();
+    let keys: Vec<String> = entries
+        .iter()
+        .flat_map(|e| e.pairs.iter().map(|(k, _)| k.clone()))
+        .collect();
+    let record = AuditRecord::new(&cfg.db_path, titles, keys, Some("import".to_string()));
+    if let Err(e) = audit_access(&cfg, record) {
+        eprintln!("WARNING: failed to write audit log: {e}");
+    }
 
     let count = entries.len();
     let noun = if count == 1 { "entry" } else { "entries" };
@@ -217,38 +233,6 @@ fn parse_dotenv_import(content: &str) -> Result<Vec<ParsedEntry>> {
         parser.feed(line)?;
     }
     parser.finish()
-}
-
-/// Parse a dotenv value, unquoting and unescaping when wrapped in double quotes.
-fn parse_dotenv_value(raw: &str) -> String {
-    let bytes = raw.as_bytes();
-    if bytes.len() >= 2 && bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"' {
-        unescape_dotenv_value(&raw[1..raw.len() - 1])
-    } else {
-        raw.to_string()
-    }
-}
-
-fn unescape_dotenv_value(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('\\') => out.push('\\'),
-                Some(other) => {
-                    out.push('\\');
-                    out.push(other);
-                }
-                None => out.push('\\'),
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 #[cfg(test)]

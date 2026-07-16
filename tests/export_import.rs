@@ -324,3 +324,60 @@ fn import_dotenv_trims_value_whitespace() {
         .success()
         .stdout(predicates::str::contains("TRIM_KEY=value"));
 }
+
+#[test]
+fn import_writes_audit_record_with_names_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    let import_file = dir.path().join("import.json");
+    setup_multi_entry_vault(&db);
+    std::fs::write(
+        &import_file,
+        r#"{ "entries": [ { "title": "stripe", "keys": { "STRIPE_KEY": "sk_test" } } ] }"#,
+    )
+    .unwrap();
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", log.to_str().unwrap())
+        .args(["import", import_file.to_str().unwrap(), "--merge"])
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&log).unwrap();
+    assert!(content.contains(r#""command":"import""#), "got: {content}");
+    assert!(content.contains("stripe"));
+    assert!(content.contains("STRIPE_KEY"));
+    assert!(!content.contains("sk_test"));
+}
+
+#[test]
+fn export_writes_audit_record_for_every_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    let log = dir.path().join("access.log");
+    setup_multi_entry_vault(&db);
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", log.to_str().unwrap())
+        .args(["export", "--stdout"])
+        .assert()
+        .success();
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_LOG", log.to_str().unwrap())
+        .args(["export", "--stdout", "--reveal"])
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&log).unwrap();
+    assert!(content.contains(r#""command":"export""#), "got: {content}");
+    assert!(
+        content.contains(r#""command":"export --reveal""#),
+        "got: {content}"
+    );
+    assert!(content.contains("GITHUB_TOKEN"));
+    assert!(!content.contains("ghp_secret"));
+}

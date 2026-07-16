@@ -379,6 +379,7 @@ kprun unset  <entry> KEY [KEY2 ...]
 kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
 kprun import <file> [--merge]
+kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
 kprun doctor [--mcp <entry>]
 kprun reveal-master
 kprun deinit [--delete-vault [--yes]]
@@ -392,6 +393,7 @@ Notes:
 - `deinit --delete-vault` deletes the keychain entry **and** the vault file after confirmation (`--yes` skips the prompt); the keyfile and audit log are never touched.
 - `run` inherits stdio to the child and writes **nothing** to stdout (MCP-safe).
 - `import` without `--merge` replaces vault content; structure-only dotenv exports are rejected to prevent accidental wipes.
+- `migrate` imports a plain project `.env` (no title comments needed) into a single entry named after the file's directory, then offers to add the file to `.gitignore`; the source file is kept unless you pass `--delete`. Keys with empty or whitespace-only values are skipped with a stderr warning — the vault backend cannot store them.
 - Exit codes: `1` for DB not found, entry not found, unlock failed, DB locked; child exit code propagated; empty injection → `0` with stderr warning.
 
 ### Export and import
@@ -408,15 +410,15 @@ GITHUB_TOKEN="ghp_xxx"
 DATABASE_URL="postgres://local"
 ```
 
-To migrate a flat project `.env` (keys only, no title comments), add one title line at the top. All following keys land in that entry until the next `# title` or blank line:
+To migrate a flat project `.env` (keys only, no title comments), use `kprun migrate` — it parses the standard format directly, names the entry after the file's directory, and can clean up the repository:
 
-```env
-# default
-OPENAI_API_KEY="sk-..."
-LANGFUSE_SECRET_KEY="sk-lf-..."
+```bash
+kprun migrate backend/.env                       # asks before touching .gitignore
+kprun migrate backend/.env --gitignore --delete  # CI-friendly, full cleanup
+kprun migrate .env --entry backend --merge       # explicit title, add to existing entry
 ```
 
-Then import:
+For the kprun dotenv round-trip format itself:
 
 ```bash
 kprun import secrets.env --merge   # add/update keys; keep other vault entries

@@ -31,7 +31,8 @@ impl Config {
     }
 }
 
-fn home_dir() -> PathBuf {
+/// The user's home directory (`HOME`, then `USERPROFILE`), falling back to `.`.
+pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
