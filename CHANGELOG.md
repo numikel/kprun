@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-16
+
+See [docs/changelogs/v0.6.0.md](docs/changelogs/v0.6.0.md) for details.
+
+### Added
+
+- `kprun migrate` — command to migrate vault entries from legacy password manager exports.
+- Comprehensive manual testing guide for all features and workflows.
+- Windows update troubleshooting section in the README.
+
+### Changed
+
+- Documentation improvements: clarified master password handling and added migration notes.
+
+### Fixed
+
+- `kprun init --quick` now improves credential visibility in terminal output.
+
 ## [0.5.0] - 2026-07-12
 
 See [docs/changelogs/v0.5.0.md](docs/changelogs/v0.5.0.md) for details.
