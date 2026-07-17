@@ -47,8 +47,8 @@ const HISTORY_COMMIT_LIMIT: usize = 500;
 /// Counters surfaced in the JSON report.
 /// `files_scanned` = tracked files whose content was pattern-scanned;
 /// `files_skipped` = tracked files excluded for any reason (binary,
-/// > 5 MiB, unreadable); `history_commits` = commits parsed in phase 2
-/// > (0 when `--history` was not passed).
+/// over 5 MiB, unreadable); `history_commits` = commits parsed in phase 2
+/// (0 when `--history` was not passed).
 #[derive(Default)]
 pub struct ScanStats {
     pub files_scanned: usize,

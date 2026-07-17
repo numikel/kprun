@@ -32,9 +32,10 @@ pub fn scan_file_text(path: &str, text: &str) -> Vec<Finding> {
 /// introduced it; removals are skipped because the introducing commit
 /// already reports it. Returns findings and the number of commits seen.
 ///
-/// Heuristic parser: a bare 40-hex line is a commit boundary (`--format=%H`),
-/// `+++ b/<path>` selects the current file. Content lines always carry a
-/// diff prefix char, so they cannot be mistaken for either marker.
+/// Heuristic parser: a bare 40- or 64-hex line (SHA-1 or SHA-256) is a commit
+/// boundary (`--format=%H`), `+++ b/<path>` selects the current file.
+/// Content lines always carry a diff prefix char, so they cannot be mistaken
+/// for either marker.
 pub fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
     let mut findings = Vec::new();
     let mut commits = 0;
@@ -47,7 +48,7 @@ pub fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
             file = None;
         } else if let Some(rest) = line.strip_prefix("+++ ") {
             // `+++ /dev/null` (deletion) yields None and drops later hits.
-            file = rest.strip_prefix("b/").map(str::to_string);
+            file = parse_diff_target(rest);
         } else if let Some(added) = line.strip_prefix('+') {
             if let (Some(commit), Some(path)) = (&commit, &file) {
                 for hit in patterns::find_in_line(added) {
@@ -67,7 +68,77 @@ pub fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
 }
 
 fn is_commit_hash(line: &str) -> bool {
-    line.len() == 40 && line.bytes().all(|b| b.is_ascii_hexdigit())
+    (line.len() == 40 || line.len() == 64) && line.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Decode a git diff-header target: `b/<path>`, `/dev/null`, or a C-quoted
+/// `"b/<escaped>"` (core.quotePath). Returns the toplevel-relative path, or
+/// None for /dev/null (deletion).
+fn parse_diff_target(rest: &str) -> Option<String> {
+    let target = if rest.len() >= 2 && rest.starts_with('"') && rest.ends_with('"') {
+        unquote_git_path(&rest[1..rest.len() - 1])
+    } else {
+        rest.to_string()
+    };
+    if target == "/dev/null" {
+        return None;
+    }
+    target.strip_prefix("b/").map(str::to_string)
+}
+
+/// Decode git's C-style path quoting: `\\ \" \t \n \r` and `\NNN` octal byte
+/// escapes (accumulated as bytes, then lossy-UTF-8). Unknown escapes pass
+/// through literally.
+fn unquote_git_path(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            match bytes[i + 1] {
+                b'\\' => {
+                    out.push(b'\\');
+                    i += 2;
+                }
+                b'"' => {
+                    out.push(b'"');
+                    i += 2;
+                }
+                b't' => {
+                    out.push(b'\t');
+                    i += 2;
+                }
+                b'n' => {
+                    out.push(b'\n');
+                    i += 2;
+                }
+                b'r' => {
+                    out.push(b'\r');
+                    i += 2;
+                }
+                b'0'..=b'7' if i + 4 <= bytes.len() => {
+                    match u8::from_str_radix(&s[i + 1..i + 4], 8) {
+                        Ok(v) => {
+                            out.push(v);
+                            i += 4;
+                        }
+                        Err(_) => {
+                            out.push(bytes[i]);
+                            i += 1;
+                        }
+                    }
+                }
+                _ => {
+                    out.push(bytes[i]);
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -200,6 +271,55 @@ mod tests {
                 assert_eq!((c1.as_str(), p1.as_str()), ("bbbbbbbbbbbb", "b.txt"));
             }
             other => panic!("unexpected findings: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn log_parser_accepts_sha256_commit_hash() {
+        let secret = aws('X');
+        let hash = "abcdef012345".to_string() + &"0".repeat(52);
+        assert_eq!(hash.len(), 64);
+        let patch = format!(
+            "{hash}\n\
+             diff --git a/f.txt b/f.txt\n\
+             +++ b/f.txt\n\
+             +key={secret}\n"
+        );
+        let (findings, commits) = scan_log_patch(&patch);
+        assert_eq!(commits, 1);
+        assert_eq!(findings.len(), 1);
+        match &findings[0] {
+            Finding::Secret {
+                origin: Origin::History { commit, path },
+                ..
+            } => {
+                assert_eq!(commit, "abcdef012345");
+                assert_eq!(path, "f.txt");
+            }
+            other => panic!("unexpected finding: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn log_parser_decodes_c_quoted_path_with_tab() {
+        let secret = aws('Y');
+        let hash = "1234567890ab".to_string() + &"0".repeat(28);
+        let patch = format!(
+            "{hash}\n\
+             diff --git a/na.txt b/na.txt\n\
+             +++ \"b/na\\tme.txt\"\n\
+             +key={secret}\n"
+        );
+        let (findings, _commits) = scan_log_patch(&patch);
+        assert_eq!(findings.len(), 1);
+        match &findings[0] {
+            Finding::Secret {
+                origin: Origin::History { path, .. },
+                ..
+            } => {
+                assert_eq!(path, "na\tme.txt");
+            }
+            other => panic!("unexpected finding: {other:?}"),
         }
     }
 }

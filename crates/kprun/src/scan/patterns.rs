@@ -287,7 +287,8 @@ fn mask(pat: &SecretPattern, bytes: &[u8], i: usize, len: usize) -> String {
         return pat.prefix.to_string();
     }
     let start = i + pat.prefix.len();
-    let head = String::from_utf8_lossy(&bytes[start..start + len.min(4)]);
+    let matched = String::from_utf8_lossy(&bytes[start..start + len]);
+    let head: String = matched.chars().take(4).collect();
     format!("{}{}…({} chars)", pat.prefix, head, pat.prefix.len() + len)
 }
 

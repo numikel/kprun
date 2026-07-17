@@ -640,7 +640,8 @@ detection of tracked `.env` files (`.env.example` / `.env.sample` /
 `.env.template` / `.env.dist` count as templates — not flagged as files,
 but their content is still scanned). With `--history` it also scans lines
 added in `git log -p` (last 500 commits; `--full-history` removes the
-limit).
+limit). `--history` scans the **entire repository history**, regardless
+of `--path` — unlike the working-tree scan, which is scoped to `--path`.
 
 - It is **not** a substitute for a dedicated scanner — run
   [gitleaks](https://github.com/gitleaks/gitleaks) or

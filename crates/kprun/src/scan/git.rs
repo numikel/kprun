@@ -1,5 +1,5 @@
 //! Thin `git` process runner for the scanner. This is deliberately the only
-//! `Command::new("git")` call site in the codebase.
+//! `Command::new("git")` call site in non-test code.
 
 use std::process::Command;
 
@@ -19,7 +19,10 @@ fn run_git(path: &str, args: &[&str]) -> Result<Vec<u8>, ScanError> {
     }
     let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if msg.is_empty() {
-        Err(format!("git {} failed", args[0]))
+        Err(format!(
+            "git {} failed",
+            args.first().copied().unwrap_or("git")
+        ))
     } else {
         Err(msg)
     }
