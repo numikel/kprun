@@ -65,3 +65,34 @@ fn path_outside_a_repo_exits_two() {
         .code(2)
         .stderr(predicate::str::contains("error:"));
 }
+
+#[test]
+fn tracked_env_file_is_a_finding() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::write(tmp.path().join(".env"), "APP_SECRET=value\n").unwrap();
+    commit_all(tmp.path(), "add env");
+    scan_cmd(tmp.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("[env-file]").and(predicate::str::contains(".env")));
+}
+
+#[test]
+fn env_example_without_secrets_is_clean() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::write(tmp.path().join(".env.example"), "APP_SECRET=\n").unwrap();
+    commit_all(tmp.path(), "add template");
+    scan_cmd(tmp.path()).assert().code(0).stdout("");
+}
+
+#[test]
+fn gitignored_untracked_env_is_clean() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::write(tmp.path().join(".gitignore"), ".env\n").unwrap();
+    commit_all(tmp.path(), "ignore env");
+    std::fs::write(tmp.path().join(".env"), "APP_SECRET=value\n").unwrap();
+    scan_cmd(tmp.path()).assert().code(0).stdout("");
+}

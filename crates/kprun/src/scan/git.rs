@@ -31,3 +31,15 @@ pub fn rev_parse_toplevel(path: &str) -> Result<String, ScanError> {
     let out = run_git(path, &["rev-parse", "--show-toplevel"])?;
     Ok(String::from_utf8_lossy(&out).trim().to_string())
 }
+
+/// Tracked files as toplevel-relative forward-slash paths.
+/// `-z` (NUL separation) keeps unusual filenames intact; `--full-name`
+/// keeps paths toplevel-relative even when `path` is a subdirectory.
+pub fn ls_files(path: &str) -> Result<Vec<String>, ScanError> {
+    let out = run_git(path, &["ls-files", "-z", "--full-name"])?;
+    Ok(String::from_utf8_lossy(&out)
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect())
+}
