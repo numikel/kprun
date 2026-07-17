@@ -166,3 +166,53 @@ fn removed_secret_is_found_only_with_history() {
             .and(predicate::str::contains(secret.as_str()).not()),
     );
 }
+
+#[test]
+fn json_output_is_one_parsable_document_with_masked_values() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"D".repeat(16);
+    std::fs::write(tmp.path().join(".env"), "APP_SECRET=value\n").unwrap();
+    std::fs::write(tmp.path().join("cfg.txt"), format!("k={secret}\n")).unwrap();
+    commit_all(tmp.path(), "add files");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--json");
+    let assert = cmd.assert().code(1);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["stats"]["history_commits"], 0);
+    assert!(v["stats"]["files_scanned"].as_u64().unwrap() >= 2);
+
+    let findings = v["findings"].as_array().unwrap();
+    assert!(findings
+        .iter()
+        .any(|f| f["kind"] == "tracked_env_file" && f["path"] == ".env"));
+    assert!(findings.iter().any(|f| f["kind"] == "secret"
+        && f["pattern"] == "aws-access-key-id"
+        && f["origin"] == "working_tree"
+        && f["path"] == "cfg.txt"
+        && f["line"] == 1));
+    assert!(
+        !stdout.contains(&secret),
+        "full value must never reach stdout"
+    );
+}
+
+#[test]
+fn json_output_on_clean_repo_has_empty_findings_and_exit_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::write(tmp.path().join("README.md"), "# demo\n").unwrap();
+    commit_all(tmp.path(), "initial");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--json");
+    let assert = cmd.assert().code(0);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["findings"].as_array().unwrap().len(), 0);
+}

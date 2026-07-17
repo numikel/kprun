@@ -44,11 +44,22 @@ const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
 /// Default commit cap for `--history`; `--full-history` removes it.
 const HISTORY_COMMIT_LIMIT: usize = 500;
 
+/// Counters surfaced in the JSON report.
+/// `files_scanned` = tracked files whose content was pattern-scanned;
+/// `files_skipped` = tracked files excluded for any reason (binary,
+/// > 5 MiB, unreadable); `history_commits` = commits parsed in phase 2
+/// > (0 when `--history` was not passed).
+#[derive(Default)]
+pub struct ScanStats {
+    pub files_scanned: usize,
+    pub files_skipped: usize,
+    pub history_commits: usize,
+}
+
 /// Result of a completed scan.
 pub struct ScanOutcome {
     pub findings: Vec<Finding>,
-    /// Tracked files whose content was actually pattern-scanned.
-    pub files_scanned: usize,
+    pub stats: ScanStats,
 }
 
 /// Template basenames that are intentionally tracked; excluded from the
@@ -75,7 +86,7 @@ pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOut
     let files = git::ls_files(path)?;
 
     let mut findings = Vec::new();
-    let mut files_scanned = 0;
+    let mut stats = ScanStats::default();
     for file in &files {
         if is_tracked_env_file(file) {
             findings.push(Finding::TrackedEnvFile { path: file.clone() });
@@ -86,10 +97,12 @@ pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOut
         match std::fs::metadata(&abs) {
             Ok(meta) if meta.len() > MAX_FILE_SIZE => {
                 eprintln!("warning: skipping {file}: larger than 5 MiB");
+                stats.files_skipped += 1;
                 continue;
             }
             Err(e) => {
                 eprintln!("warning: skipping {file}: {e}");
+                stats.files_skipped += 1;
                 continue;
             }
             Ok(_) => {}
@@ -98,17 +111,20 @@ pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOut
             Ok(b) => b,
             Err(e) => {
                 eprintln!("warning: skipping {file}: {e}");
+                stats.files_skipped += 1;
                 continue;
             }
         };
         if scanner::is_binary(&bytes) {
+            stats.files_skipped += 1;
             continue; // binaries are expected in repos; skip silently
         }
         // Patterns are pure ASCII, so lossy conversion cannot corrupt a match.
         let text = String::from_utf8_lossy(&bytes);
         findings.extend(scanner::scan_file_text(file, &text));
-        files_scanned += 1;
+        stats.files_scanned += 1;
     }
+
     if history {
         if git::head_exists(path) {
             let limit = if full_history {
@@ -117,16 +133,15 @@ pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOut
                 Some(HISTORY_COMMIT_LIMIT)
             };
             let patch = git::log_patch(path, limit)?;
-            let (history_findings, _commits) = scanner::scan_log_patch(&patch);
+            let (history_findings, commits) = scanner::scan_log_patch(&patch);
             findings.extend(history_findings);
+            stats.history_commits = commits;
         } else {
             eprintln!("warning: repository has no commits; skipping history scan");
         }
     }
-    Ok(ScanOutcome {
-        findings,
-        files_scanned,
-    })
+
+    Ok(ScanOutcome { findings, stats })
 }
 
 #[cfg(test)]
