@@ -7,22 +7,58 @@ set -e
 REPO="numikel/kprun"
 BINARY_NAME="kprun"
 INSTALL_DIR="${KPRUN_INSTALL_DIR:-$HOME/.local/bin}"
+# Optional minisign verification (defense in depth on top of SHA-256).
+KPRUN_MINISIGN_PUBKEY="RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+DIM='\033[90m'
 NC='\033[0m'
 
-info() {
-  printf "${GREEN}[INFO]${NC} %s\n" "$1"
+# Plain text when stdout is not a terminal.
+if [ ! -t 1 ]; then
+  RED=''; GREEN=''; YELLOW=''; DIM=''; NC=''
+fi
+
+# Fancy glyphs only on a terminal with a UTF-8 locale; ASCII otherwise.
+# ASCII glyphs are pre-padded to a common width of 4 so columns stay aligned.
+FANCY=0
+if [ -t 1 ]; then
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *UTF-8*|*utf8*) FANCY=1 ;;
+  esac
+fi
+
+if [ "$FANCY" = "1" ]; then
+  GLYPH_OK='✓'
+  GLYPH_ERR='✗'
+  GLYPH_WARN='!'
+  GLYPH_SUB='→'
+else
+  GLYPH_OK='[ok]'
+  GLYPH_ERR='[x] '
+  GLYPH_WARN='[!] '
+  GLYPH_SUB='... '
+fi
+
+# Step labels are padded to the longest label ("Downloading", 11 chars) + 1.
+LABEL_WIDTH=12
+
+step() {
+  printf "  ${GREEN}%s %-${LABEL_WIDTH}s${NC} %s\n" "$GLYPH_OK" "$1" "$2"
+}
+
+substep() {
+  printf "  ${DIM}%s %-${LABEL_WIDTH}s %s${NC}\n" "$GLYPH_SUB" "$1" "$2"
 }
 
 warn() {
-  printf "${YELLOW}[WARN]${NC} %s\n" "$1"
+  printf "  ${YELLOW}%s %s${NC}\n" "$GLYPH_WARN" "$1"
 }
 
 error() {
-  printf "${RED}[ERROR]${NC} %s\n" "$1"
+  printf "  ${RED}%s %s${NC}\n" "$GLYPH_ERR" "$1"
   exit 1
 }
 
@@ -74,6 +110,15 @@ get_latest_version() {
   fi
 }
 
+# Returns success when minisign verification will actually run for the given
+# signature path: pubkey configured (not the placeholder), the `minisign`
+# binary is on PATH, and the signature file exists. Shared by the Checksums
+# step label and verify_checksum() so the two can't desync.
+minisign_will_verify() {
+  MINISIG="$1"
+  [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1 && [ -f "$MINISIG" ]
+}
+
 verify_checksum() {
   ASSET_NAME="$1"
   ARCHIVE="$2"
@@ -84,7 +129,6 @@ verify_checksum() {
     return
   fi
 
-  info "Verifying SHA-256 checksum..."
   EXPECTED=$(grep "[[:space:]]${ASSET_NAME}\$" "$CHECKSUMS" | awk '{print $1}')
   if [ -z "$EXPECTED" ]; then
     error "checksum for ${ASSET_NAME} not found in checksums.txt — refusing to install"
@@ -102,28 +146,19 @@ verify_checksum() {
     error "checksum mismatch! expected=${EXPECTED} actual=${ACTUAL} — refusing to install"
   fi
 
-  info "Checksum verified."
+  step "Verified" "SHA-256 checksum"
 
-  # Optional minisign verification (defense in depth on top of SHA-256).
-  KPRUN_MINISIGN_PUBKEY="RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr"
   MINISIG="${CHECKSUMS}.minisig"
-  if [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1; then
-    if [ -f "$MINISIG" ]; then
-      PUBFILE="$(mktemp)"
-      printf '%s\n' "$KPRUN_MINISIGN_PUBKEY" > "$PUBFILE"
-      if ! minisign -V -p "$PUBFILE" -m "$CHECKSUMS"; then
-        rm -f "$PUBFILE"
-        error "minisign signature verification failed"
-      fi
-      rm -f "$PUBFILE"
-      info "minisign signature verified"
+  if minisign_will_verify "$MINISIG"; then
+    if ! minisign -V -P "$KPRUN_MINISIGN_PUBKEY" -m "$CHECKSUMS" >/dev/null; then
+      error "minisign signature verification failed"
     fi
+    step "Verified" "minisign signature"
   fi
 }
 
 verify_archive_paths() {
   ARCHIVE="$1"
-  info "Verifying archive contents..."
   if tar -tzf "$ARCHIVE" | grep -qE '^/|(^|/)\.\.(/|$)'; then
     error "Archive contains unsafe paths (absolute or directory traversal) — refusing to extract"
   fi
@@ -131,19 +166,22 @@ verify_archive_paths() {
 
 update_path() {
   if [ "${KPRUN_NO_MODIFY_PATH:-0}" = "1" ]; then
-    info "KPRUN_NO_MODIFY_PATH=1 set — skipping PATH update"
+    step "PATH" "skipped (KPRUN_NO_MODIFY_PATH=1)"
     return
   fi
 
   case ":$PATH:" in
-    *:"$INSTALL_DIR":*) return ;;
+    *:"$INSTALL_DIR":*)
+      step "PATH" "already contains $INSTALL_DIR"
+      return
+      ;;
   esac
 
   PATH_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
   for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
     if [ -f "$profile" ]; then
       if grep -qF "$INSTALL_DIR" "$profile" 2>/dev/null; then
-        info "PATH already configured in $profile"
+        step "PATH" "already configured in $profile"
         return
       fi
       {
@@ -151,7 +189,7 @@ update_path() {
         echo "# kprun"
         echo "$PATH_LINE"
       } >> "$profile"
-      info "Added $INSTALL_DIR to PATH in $profile"
+      step "PATH" "added to $profile"
       warn "Open a new terminal for PATH changes to take effect"
       return
     fi
@@ -162,9 +200,9 @@ update_path() {
 }
 
 install() {
-  info "Detected: $OS $ARCH"
-  info "Target: $TARGET"
-  info "Version: $VERSION"
+  step "Detected" "$OS $ARCH"
+  step "Target" "$TARGET"
+  step "Version" "$VERSION ($VERSION_NOTE)"
 
   ASSET_NAME="${BINARY_NAME}-${TARGET}.tar.gz"
   DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
@@ -173,12 +211,12 @@ install() {
   ARCHIVE="${TEMP_DIR}/${ASSET_NAME}"
   CHECKSUMS="${TEMP_DIR}/checksums.txt"
 
-  info "Downloading from: $DOWNLOAD_URL"
+  substep "Downloading" "$DOWNLOAD_URL"
   if ! curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE"; then
     error "Failed to download binary"
   fi
+  step "Downloaded" "$ASSET_NAME"
 
-  info "Downloading checksums..."
   if ! curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS"; then
     if [ "${KPRUN_SKIP_CHECKSUM:-0}" = "1" ] && [ "${KPRUN_DEV:-0}" = "1" ]; then
       warn "Failed to download checksums.txt — continuing because developer skip is enabled"
@@ -189,13 +227,18 @@ install() {
     MINISIG_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt.minisig"
     MINISIG="${TEMP_DIR}/checksums.txt.minisig"
     curl -fsSL "$MINISIG_URL" -o "$MINISIG" 2>/dev/null || true
+    if minisign_will_verify "$MINISIG"; then
+      step "Checksums" "checksums.txt + checksums.txt.minisig"
+    else
+      step "Checksums" "checksums.txt"
+    fi
     verify_checksum "$ASSET_NAME" "$ARCHIVE" "$CHECKSUMS"
   fi
 
   verify_archive_paths "$ARCHIVE"
 
-  info "Extracting..."
   tar -xzf "$ARCHIVE" -C "$TEMP_DIR"
+  step "Extracted" "archive contents"
 
   mkdir -p "$INSTALL_DIR"
   mv "${TEMP_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/"
@@ -203,7 +246,7 @@ install() {
 
   rm -rf "$TEMP_DIR"
 
-  info "Successfully installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
+  step "Installed" "${INSTALL_DIR}/${BINARY_NAME}"
 }
 
 verify() {
@@ -212,7 +255,8 @@ verify() {
     error "Binary not found at expected location: $INSTALLED_BIN"
   fi
 
-  info "Verification: $("$INSTALLED_BIN" --version)"
+  INSTALLED_VERSION="$("$INSTALLED_BIN" --version)"
+  step "Works" "$INSTALLED_VERSION"
 
   if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
     warn "Binary installed but not yet on PATH in this shell"
@@ -220,7 +264,7 @@ verify() {
 }
 
 main() {
-  info "Installing $BINARY_NAME..."
+  printf '%s installer\n\n' "$BINARY_NAME"
 
   detect_os
   detect_arch
@@ -228,9 +272,10 @@ main() {
 
   if [ -n "${KPRUN_VERSION:-}" ]; then
     VERSION="$KPRUN_VERSION"
-    info "Using pinned version from KPRUN_VERSION: $VERSION"
+    VERSION_NOTE="pinned via KPRUN_VERSION"
   else
     get_latest_version
+    VERSION_NOTE="latest"
   fi
 
   install
@@ -238,9 +283,9 @@ main() {
   verify
 
   echo ""
-  info "Installation complete!"
-  info "Binary: ${INSTALL_DIR}/${BINARY_NAME}"
-  info "Next step: open a new terminal, then run 'kprun init' to create your vault"
+  printf "${GREEN}%s installed successfully!${NC}\n" "$INSTALLED_VERSION"
+  echo ""
+  printf "  Next: open a new terminal, then run 'kprun init' to create your vault\n"
 }
 
 main

@@ -8,17 +8,42 @@ $ErrorActionPreference = 'Stop'
 $Repo = 'numikel/kprun'
 $BinaryName = 'kprun'
 $InstallDir = if ($env:KPRUN_INSTALL_DIR) { $env:KPRUN_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'kprun\bin' }
+# Optional minisign verification (defense in depth on top of SHA-256).
+$KprunMinisignPubkey = 'RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr'
 
-function Write-Info([string]$Message) {
-    Write-Host "[INFO] $Message" -ForegroundColor Green
+# --- Presentation layer ------------------------------------------------------
+# Fancy mode: PowerShell 7+, Windows Terminal, or an IDE terminal (VS Code sets
+# TERM_PROGRAM). Bare Windows PowerShell 5.1 in conhost gets the ASCII fallback.
+$Fancy = ($PSVersionTable.PSVersion.Major -ge 7) -or [bool]$env:WT_SESSION -or [bool]$env:TERM_PROGRAM
+
+# Glyphs are built from code points, not source literals: this file has no BOM,
+# so Windows PowerShell 5.1 parses it as ANSI and would mangle a raw U+2713 at
+# parse time. ASCII glyphs are pre-padded to a common width of 4 so the text
+# column stays aligned in both glyph sets.
+$Glyphs = if ($Fancy) {
+    @{ Ok = [string][char]0x2713; Err = [string][char]0x2717; Warn = '!'; Sub = [string][char]0x2192 }
+} else {
+    @{ Ok = '[ok]'; Err = '[x] '; Warn = '[!] '; Sub = '... ' }
+}
+
+# Step labels are padded to the longest label ("Downloading", 11 chars) + 1.
+$LabelWidth = 12
+
+function Write-Step([string]$Label, [string]$Value) {
+    Write-Host "  $($Glyphs.Ok) $($Label.PadRight($LabelWidth))" -ForegroundColor Green -NoNewline
+    Write-Host " $Value"
+}
+
+function Write-Substep([string]$Label, [string]$Value) {
+    Write-Host "  $($Glyphs.Sub) $($Label.PadRight($LabelWidth)) $Value" -ForegroundColor DarkGray
 }
 
 function Write-Warn([string]$Message) {
-    Write-Host "[WARN] $Message" -ForegroundColor Yellow
+    Write-Host "  $($Glyphs.Warn) $Message" -ForegroundColor Yellow
 }
 
 function Write-Err([string]$Message) {
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
+    Write-Host "  $($Glyphs.Err) $Message" -ForegroundColor Red
     exit 1
 }
 
@@ -70,13 +95,20 @@ function Test-ArchivePathsSafe([string[]]$EntryNames) {
     }
 }
 
+# Returns $true when minisign verification will actually run for the given
+# signature path: pubkey configured (not the placeholder), the `minisign`
+# binary is on PATH, and the signature file exists. Shared by the Checksums
+# step label and Verify-Checksum so the two can't desync.
+function Test-MinisignWillVerify([string]$MinisigPath) {
+    return ($KprunMinisignPubkey -ne 'RWQ...') -and (Get-Command minisign -ErrorAction SilentlyContinue) -and (Test-Path $MinisigPath)
+}
+
 function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$ChecksumsPath) {
     if ($env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1') {
         Write-Warn 'WARNING: checksum verification skipped (developer mode)'
         return
     }
 
-    Write-Info 'Verifying SHA-256 checksum...'
     $expectedLine = Get-Content $ChecksumsPath | Where-Object { $_ -match "\s$([regex]::Escape($AssetName))$" } | Select-Object -First 1
     if (-not $expectedLine) {
         Write-Err "checksum for $AssetName not found in checksums.txt — refusing to install"
@@ -88,13 +120,10 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
         Write-Err "checksum mismatch! expected=$expected actual=$actual — refusing to install"
     }
 
-    Write-Info 'Checksum verified.'
+    Write-Step 'Verified' 'SHA-256 checksum'
 
-  # Optional minisign verification (defense in depth on top of SHA-256).
-  $KprunMinisignPubkey = 'RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr'
   $minisigPath = "$ChecksumsPath.minisig"
-  if ($KprunMinisignPubkey -ne 'RWQ...' -and (Get-Command minisign -ErrorAction SilentlyContinue)) {
-    if (Test-Path $minisigPath) {
+  if (Test-MinisignWillVerify $minisigPath) {
       # -P takes the raw base64 key; a key *file* would also need the
       # untrusted-comment header line, which a bare Set-Content omits.
       # Out-Null keeps minisign's stdout from polluting the caller's return
@@ -103,14 +132,13 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
       if ($LASTEXITCODE -ne 0) {
         Write-Err 'minisign signature verification failed'
       }
-      Write-Info 'minisign signature verified'
-    }
+      Write-Step 'Verified' 'minisign signature'
   }
 }
 
 function Update-UserPath {
     if ($env:KPRUN_NO_MODIFY_PATH -eq '1') {
-        Write-Info 'KPRUN_NO_MODIFY_PATH=1 set — skipping PATH update'
+        Write-Step 'PATH' 'skipped (KPRUN_NO_MODIFY_PATH=1)'
         return
     }
 
@@ -121,20 +149,21 @@ function Update-UserPath {
 
     $segments = $currentPath -split ';' | Where-Object { $_ -ne '' }
     if ($segments -contains $InstallDir) {
-        Write-Info "PATH already contains $InstallDir"
+        Write-Step 'PATH' "already contains $InstallDir"
         return
     }
 
     $newPath = if ($currentPath) { "$currentPath;$InstallDir" } else { $InstallDir }
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     $env:Path = "$env:Path;$InstallDir"
-    Write-Info "Added $InstallDir to user PATH"
+    Write-Step 'PATH' "added $InstallDir to user PATH"
     Write-Warn 'Open a new terminal for PATH changes to take effect'
 }
 
 function Install-Kprun {
     param(
         [string]$Version,
+        [string]$VersionNote,
         [string]$Target
     )
 
@@ -148,13 +177,13 @@ function Install-Kprun {
         $archivePath = Join-Path $tempDir $assetName
         $checksumsPath = Join-Path $tempDir 'checksums.txt'
 
-        Write-Info "Detected: Windows $Target"
-        Write-Info "Version: $Version"
-        Write-Info "Downloading from: $downloadUrl"
+        Write-Step 'Detected' "Windows $Target"
+        Write-Step 'Version' "$Version ($VersionNote)"
+        Write-Substep 'Downloading' $downloadUrl
 
         Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
+        Write-Step 'Downloaded' $assetName
 
-        Write-Info 'Downloading checksums...'
         try {
             Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsPath -UseBasicParsing
         } catch {
@@ -173,6 +202,8 @@ function Install-Kprun {
             } catch {
                 # Signature file is optional until signing is provisioned.
             }
+            $checksumsValue = if (Test-MinisignWillVerify $minisigPath) { 'checksums.txt + checksums.txt.minisig' } else { 'checksums.txt' }
+            Write-Step 'Checksums' $checksumsValue
             Verify-Checksum -AssetName $assetName -ArchivePath $archivePath -ChecksumsPath $checksumsPath
         }
 
@@ -185,9 +216,9 @@ function Install-Kprun {
             $zip.Dispose()
         }
 
-        Write-Info 'Extracting...'
         $extractDir = Join-Path $tempDir 'extract'
         [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractDir)
+        Write-Step 'Extracted' 'archive contents'
 
         $binaryPath = Join-Path $extractDir "$BinaryName.exe"
         if (-not (Test-Path $binaryPath)) {
@@ -198,7 +229,7 @@ function Install-Kprun {
         $installedBin = Join-Path $InstallDir "$BinaryName.exe"
         Move-Item -Path $binaryPath -Destination $installedBin -Force
 
-        Write-Info "Successfully installed $BinaryName to $installedBin"
+        Write-Step 'Installed' $installedBin
         return $installedBin
     } finally {
         if (Test-Path $tempDir) {
@@ -213,29 +244,32 @@ function Verify-Installation([string]$InstalledBin) {
     }
 
     $versionOutput = & $InstalledBin --version
-    Write-Info "Verification: $versionOutput"
+    Write-Step 'Works' $versionOutput
 
     $command = Get-Command $BinaryName -ErrorAction SilentlyContinue
     if (-not $command) {
         Write-Warn 'Binary installed but not yet on PATH in this shell'
     }
+    return $versionOutput
 }
 
-Write-Info "Installing $BinaryName..."
+Write-Host "$BinaryName installer"
+Write-Host ''
 
-$version = if ($env:KPRUN_VERSION) {
-    Write-Info "Using pinned version from KPRUN_VERSION: $($env:KPRUN_VERSION)"
-    $env:KPRUN_VERSION
+if ($env:KPRUN_VERSION) {
+    $version = $env:KPRUN_VERSION
+    $versionNote = 'pinned via KPRUN_VERSION'
 } else {
-    Get-LatestVersion
+    $version = Get-LatestVersion
+    $versionNote = 'latest'
 }
 
 $target = Get-TargetTriple
-$installedBin = Install-Kprun -Version $version -Target $target
+$installedBin = Install-Kprun -Version $version -VersionNote $versionNote -Target $target
 Update-UserPath
-Verify-Installation -InstalledBin $installedBin
+$versionOutput = Verify-Installation -InstalledBin $installedBin
 
 Write-Host ''
-Write-Info 'Installation complete!'
-Write-Info "Binary: $installedBin"
-Write-Info "Next step: open a new terminal, then run 'kprun init' to create your vault"
+Write-Host "$versionOutput installed successfully!" -ForegroundColor Green
+Write-Host ''
+Write-Host "  Next: open a new terminal, then run 'kprun init' to create your vault"
