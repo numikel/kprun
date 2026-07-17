@@ -18,6 +18,7 @@ mod mcp;
 mod migrate;
 mod reveal_master;
 mod run;
+mod scan;
 mod set;
 mod unset;
 
@@ -86,6 +87,12 @@ pub fn dispatch(command: Commands) {
             delete_vault,
             yes,
         } => std::process::exit(deinit::execute(db, delete_vault, yes)),
+        Commands::Scan {
+            path,
+            history,
+            full_history,
+            json,
+        } => std::process::exit(scan::execute(path, history, full_history, json)),
     }
 }
 

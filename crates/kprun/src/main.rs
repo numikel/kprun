@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod mcp_bridge;
+mod scan;
 mod spawn;
 mod ui;
 

@@ -89,6 +89,10 @@ name = "keepassxc_compat"
 path = "../../tests/keepassxc_compat.rs"
 required-features = ["test-hooks"]
 
+[[test]]
+name = "scan"
+path = "../../tests/scan.rs"
+
 [features]
 default = []
 test-hooks = ["kprun-core/test-hooks"]
