@@ -150,13 +150,9 @@ verify_checksum() {
 
   MINISIG="${CHECKSUMS}.minisig"
   if minisign_will_verify "$MINISIG"; then
-    PUBFILE="$(mktemp)"
-    printf '%s\n' "$KPRUN_MINISIGN_PUBKEY" > "$PUBFILE"
-    if ! minisign -V -p "$PUBFILE" -m "$CHECKSUMS" >/dev/null; then
-      rm -f "$PUBFILE"
+    if ! minisign -V -P "$KPRUN_MINISIGN_PUBKEY" -m "$CHECKSUMS" >/dev/null; then
       error "minisign signature verification failed"
     fi
-    rm -f "$PUBFILE"
     step "Verified" "minisign signature"
   fi
 }
