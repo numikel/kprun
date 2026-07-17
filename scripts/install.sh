@@ -7,6 +7,8 @@ set -e
 REPO="numikel/kprun"
 BINARY_NAME="kprun"
 INSTALL_DIR="${KPRUN_INSTALL_DIR:-$HOME/.local/bin}"
+# Optional minisign verification (defense in depth on top of SHA-256).
+KPRUN_MINISIGN_PUBKEY="RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -108,6 +110,15 @@ get_latest_version() {
   fi
 }
 
+# Returns success when minisign verification will actually run for the given
+# signature path: pubkey configured (not the placeholder), the `minisign`
+# binary is on PATH, and the signature file exists. Shared by the Checksums
+# step label and verify_checksum() so the two can't desync.
+minisign_will_verify() {
+  MINISIG="$1"
+  [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1 && [ -f "$MINISIG" ]
+}
+
 verify_checksum() {
   ASSET_NAME="$1"
   ARCHIVE="$2"
@@ -137,20 +148,16 @@ verify_checksum() {
 
   step "Verified" "SHA-256 checksum"
 
-  # Optional minisign verification (defense in depth on top of SHA-256).
-  KPRUN_MINISIGN_PUBKEY="RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr"
   MINISIG="${CHECKSUMS}.minisig"
-  if [ "$KPRUN_MINISIGN_PUBKEY" != "RWQ..." ] && command -v minisign >/dev/null 2>&1; then
-    if [ -f "$MINISIG" ]; then
-      PUBFILE="$(mktemp)"
-      printf '%s\n' "$KPRUN_MINISIGN_PUBKEY" > "$PUBFILE"
-      if ! minisign -V -p "$PUBFILE" -m "$CHECKSUMS" >/dev/null; then
-        rm -f "$PUBFILE"
-        error "minisign signature verification failed"
-      fi
+  if minisign_will_verify "$MINISIG"; then
+    PUBFILE="$(mktemp)"
+    printf '%s\n' "$KPRUN_MINISIGN_PUBKEY" > "$PUBFILE"
+    if ! minisign -V -p "$PUBFILE" -m "$CHECKSUMS" >/dev/null; then
       rm -f "$PUBFILE"
-      step "Verified" "minisign signature"
+      error "minisign signature verification failed"
     fi
+    rm -f "$PUBFILE"
+    step "Verified" "minisign signature"
   fi
 }
 
@@ -224,7 +231,7 @@ install() {
     MINISIG_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt.minisig"
     MINISIG="${TEMP_DIR}/checksums.txt.minisig"
     curl -fsSL "$MINISIG_URL" -o "$MINISIG" 2>/dev/null || true
-    if [ -f "$MINISIG" ]; then
+    if minisign_will_verify "$MINISIG"; then
       step "Checksums" "checksums.txt + checksums.txt.minisig"
     else
       step "Checksums" "checksums.txt"

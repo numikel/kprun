@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 $Repo = 'numikel/kprun'
 $BinaryName = 'kprun'
 $InstallDir = if ($env:KPRUN_INSTALL_DIR) { $env:KPRUN_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'kprun\bin' }
+# Optional minisign verification (defense in depth on top of SHA-256).
+$KprunMinisignPubkey = 'RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr'
 
 # --- Presentation layer ------------------------------------------------------
 # Fancy mode: PowerShell 7+, Windows Terminal, or an IDE terminal (VS Code sets
@@ -93,6 +95,14 @@ function Test-ArchivePathsSafe([string[]]$EntryNames) {
     }
 }
 
+# Returns $true when minisign verification will actually run for the given
+# signature path: pubkey configured (not the placeholder), the `minisign`
+# binary is on PATH, and the signature file exists. Shared by the Checksums
+# step label and Verify-Checksum so the two can't desync.
+function Test-MinisignWillVerify([string]$MinisigPath) {
+    return ($KprunMinisignPubkey -ne 'RWQ...') -and (Get-Command minisign -ErrorAction SilentlyContinue) -and (Test-Path $MinisigPath)
+}
+
 function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$ChecksumsPath) {
     if ($env:KPRUN_SKIP_CHECKSUM -eq '1' -and $env:KPRUN_DEV -eq '1') {
         Write-Warn 'WARNING: checksum verification skipped (developer mode)'
@@ -112,11 +122,8 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
 
     Write-Step 'Verified' 'SHA-256 checksum'
 
-  # Optional minisign verification (defense in depth on top of SHA-256).
-  $KprunMinisignPubkey = 'RWS4FT610kpYiZVGSJF6QfIJEFHB1DKxvSQkISakpp4e86kABel6WVkr'
   $minisigPath = "$ChecksumsPath.minisig"
-  if ($KprunMinisignPubkey -ne 'RWQ...' -and (Get-Command minisign -ErrorAction SilentlyContinue)) {
-    if (Test-Path $minisigPath) {
+  if (Test-MinisignWillVerify $minisigPath) {
       # -P takes the raw base64 key; a key *file* would also need the
       # untrusted-comment header line, which a bare Set-Content omits.
       # Out-Null keeps minisign's stdout from polluting the caller's return
@@ -126,7 +133,6 @@ function Verify-Checksum([string]$AssetName, [string]$ArchivePath, [string]$Chec
         Write-Err 'minisign signature verification failed'
       }
       Write-Step 'Verified' 'minisign signature'
-    }
   }
 }
 
@@ -157,6 +163,7 @@ function Update-UserPath {
 function Install-Kprun {
     param(
         [string]$Version,
+        [string]$VersionNote,
         [string]$Target
     )
 
@@ -170,9 +177,8 @@ function Install-Kprun {
         $archivePath = Join-Path $tempDir $assetName
         $checksumsPath = Join-Path $tempDir 'checksums.txt'
 
-        $versionNote = if ($env:KPRUN_VERSION) { 'pinned via KPRUN_VERSION' } else { 'latest' }
         Write-Step 'Detected' "Windows $Target"
-        Write-Step 'Version' "$Version ($versionNote)"
+        Write-Step 'Version' "$Version ($VersionNote)"
         Write-Substep 'Downloading' $downloadUrl
 
         Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
@@ -196,7 +202,7 @@ function Install-Kprun {
             } catch {
                 # Signature file is optional until signing is provisioned.
             }
-            $checksumsValue = if (Test-Path $minisigPath) { 'checksums.txt + checksums.txt.minisig' } else { 'checksums.txt' }
+            $checksumsValue = if (Test-MinisignWillVerify $minisigPath) { 'checksums.txt + checksums.txt.minisig' } else { 'checksums.txt' }
             Write-Step 'Checksums' $checksumsValue
             Verify-Checksum -AssetName $assetName -ArchivePath $archivePath -ChecksumsPath $checksumsPath
         }
@@ -250,10 +256,16 @@ function Verify-Installation([string]$InstalledBin) {
 Write-Host "$BinaryName installer"
 Write-Host ''
 
-$version = if ($env:KPRUN_VERSION) { $env:KPRUN_VERSION } else { Get-LatestVersion }
+if ($env:KPRUN_VERSION) {
+    $version = $env:KPRUN_VERSION
+    $versionNote = 'pinned via KPRUN_VERSION'
+} else {
+    $version = Get-LatestVersion
+    $versionNote = 'latest'
+}
 
 $target = Get-TargetTriple
-$installedBin = Install-Kprun -Version $version -Target $target
+$installedBin = Install-Kprun -Version $version -VersionNote $versionNote -Target $target
 Update-UserPath
 $versionOutput = Verify-Installation -InstalledBin $installedBin
 
