@@ -249,6 +249,19 @@ function Verify-Installation([string]$InstalledBin) {
     $command = Get-Command $BinaryName -ErrorAction SilentlyContinue
     if (-not $command) {
         Write-Warn 'Binary installed but not yet on PATH in this shell'
+    } elseif ($command.Source -and ($command.Source -ne $InstalledBin)) {
+        Write-Warn "Another version of $BinaryName is taking priority: $($command.Source)"
+        if ($command.Source -match '\.cargo[/\\]bin') {
+            Write-Substep 'Cleanup' 'Attempting to remove cargo-installed version...'
+            Remove-Item -Path $command.Source -Force -ErrorAction SilentlyContinue
+            if (Test-Path $command.Source) {
+                Write-Warn "Could not remove $($command.Source) (it might be running). Please delete it manually."
+            } else {
+                Write-Step 'Cleanup' 'Removed cargo version to fix PATH conflict'
+            }
+        } else {
+            Write-Warn "Please delete it manually so the newly installed version is used."
+        }
     }
     return $versionOutput
 }
