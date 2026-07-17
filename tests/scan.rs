@@ -96,3 +96,40 @@ fn gitignored_untracked_env_is_clean() {
     std::fs::write(tmp.path().join(".env"), "APP_SECRET=value\n").unwrap();
     scan_cmd(tmp.path()).assert().code(0).stdout("");
 }
+
+#[test]
+fn working_tree_secret_is_found_and_masked() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"A7".repeat(8); // 16 chars after prefix
+    std::fs::write(
+        tmp.path().join("config.txt"),
+        format!("aws_key = \"{secret}\"\n"),
+    )
+    .unwrap();
+    commit_all(tmp.path(), "add config");
+    scan_cmd(tmp.path()).assert().code(1).stdout(
+        predicate::str::contains("[aws-access-key-id]")
+            .and(predicate::str::contains("config.txt:1"))
+            // Masking criterion: the full value must never reach stdout.
+            .and(predicate::str::contains(secret.as_str()).not()),
+    );
+}
+
+#[test]
+fn secret_inside_env_example_is_still_scanned() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "sk-proj-".to_string() + &"q".repeat(24);
+    std::fs::write(
+        tmp.path().join(".env.example"),
+        format!("OPENAI_API_KEY={secret}\n"),
+    )
+    .unwrap();
+    commit_all(tmp.path(), "add template with real key");
+    scan_cmd(tmp.path()).assert().code(1).stdout(
+        predicate::str::contains("[openai-project-key]")
+            .and(predicate::str::contains("[env-file]").not())
+            .and(predicate::str::contains(secret.as_str()).not()),
+    );
+}

@@ -1,4 +1,4 @@
-use crate::scan::{self, Finding, ScanOutcome};
+use crate::scan::{self, Finding, Origin, ScanOutcome};
 use crate::ui;
 
 /// Own exit-code match instead of `run_command`: scan follows the
@@ -33,10 +33,22 @@ fn render_text(outcome: &ScanOutcome) {
             Finding::TrackedEnvFile { path } => {
                 println!("{:<20} {path}  (tracked in git)", "[env-file]");
             }
+            Finding::Secret {
+                pattern_id,
+                origin,
+                masked,
+            } => match origin {
+                Origin::WorkingTree { path, line } => {
+                    println!("{:<20} {path}:{line}  {masked}", format!("[{pattern_id}]"));
+                }
+            },
         }
     }
     if outcome.findings.is_empty() {
-        ui::success("no secrets found");
+        ui::success(&format!(
+            "no secrets found ({} files scanned)",
+            outcome.files_scanned
+        ));
     } else {
         eprintln!(
             "{} finding(s) — heuristic scan, run a dedicated scanner (gitleaks, trufflehog) for a full audit",
