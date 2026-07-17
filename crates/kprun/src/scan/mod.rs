@@ -26,11 +26,23 @@ pub enum Finding {
 /// Where a secret was found.
 #[derive(Debug)]
 pub enum Origin {
-    WorkingTree { path: String, line: usize },
+    WorkingTree {
+        path: String,
+        line: usize,
+    },
+    /// Commit is the short 12-hex hash; no line number — a diff line
+    /// number does not correspond to a file line. `git show` suffices.
+    History {
+        commit: String,
+        path: String,
+    },
 }
 
 /// Files larger than this are skipped with a stderr warning.
 const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
+
+/// Default commit cap for `--history`; `--full-history` removes it.
+const HISTORY_COMMIT_LIMIT: usize = 500;
 
 /// Result of a completed scan.
 pub struct ScanOutcome {
@@ -55,7 +67,7 @@ fn is_tracked_env_file(path: &str) -> bool {
 
 /// Phase 0 (environment validation) + phase 1 (working tree: tracked
 /// `.env` detection and pattern scanning of every tracked file).
-pub fn run_scan(path: &str) -> Result<ScanOutcome, ScanError> {
+pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOutcome, ScanError> {
     if which::which("git").is_err() {
         return Err("git not found in PATH".to_string());
     }
@@ -96,6 +108,20 @@ pub fn run_scan(path: &str) -> Result<ScanOutcome, ScanError> {
         let text = String::from_utf8_lossy(&bytes);
         findings.extend(scanner::scan_file_text(file, &text));
         files_scanned += 1;
+    }
+    if history {
+        if git::head_exists(path) {
+            let limit = if full_history {
+                None
+            } else {
+                Some(HISTORY_COMMIT_LIMIT)
+            };
+            let patch = git::log_patch(path, limit)?;
+            let (history_findings, _commits) = scanner::scan_log_patch(&patch);
+            findings.extend(history_findings);
+        } else {
+            eprintln!("warning: repository has no commits; skipping history scan");
+        }
     }
     Ok(ScanOutcome {
         findings,

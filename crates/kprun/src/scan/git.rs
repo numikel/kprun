@@ -43,3 +43,27 @@ pub fn ls_files(path: &str) -> Result<Vec<String>, ScanError> {
         .map(str::to_string)
         .collect())
 }
+
+/// Whether the repository has any commit (HEAD resolves). A repo without
+/// commits makes `--history` a warn-and-skip, not an error.
+pub fn head_exists(path: &str) -> bool {
+    run_git(path, &["rev-parse", "--verify", "HEAD"]).is_ok()
+}
+
+/// Full `git log -p` output. `limit` caps the number of commits from
+/// HEAD; `None` scans the entire history (`--full-history`).
+pub fn log_patch(path: &str, limit: Option<usize>) -> Result<String, ScanError> {
+    let mut args = vec![
+        "log".to_string(),
+        "-p".to_string(),
+        "--no-color".to_string(),
+        "--format=%H".to_string(),
+    ];
+    if let Some(n) = limit {
+        args.push("-n".to_string());
+        args.push(n.to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = run_git(path, &arg_refs)?;
+    Ok(String::from_utf8_lossy(&out).into_owned())
+}

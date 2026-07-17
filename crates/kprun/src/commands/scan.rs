@@ -4,12 +4,12 @@ use crate::ui;
 /// Own exit-code match instead of `run_command`: scan follows the
 /// grep/gitleaks-style contract 0 = clean, 1 = findings, 2 = execution
 /// error — a documented departure from the repo's binary 0/1 convention.
-pub fn execute(path: Option<String>, _history: bool, _full_history: bool, json: bool) -> i32 {
+pub fn execute(path: Option<String>, history: bool, full_history: bool, json: bool) -> i32 {
     if !json {
         ui::maybe_banner();
     }
     let dir = path.unwrap_or_else(|| ".".to_string());
-    match scan::run_scan(&dir) {
+    match scan::run_scan(&dir, history, full_history) {
         Ok(outcome) => {
             render_text(&outcome);
             if outcome.findings.is_empty() {
@@ -40,6 +40,12 @@ fn render_text(outcome: &ScanOutcome) {
             } => match origin {
                 Origin::WorkingTree { path, line } => {
                     println!("{:<20} {path}:{line}  {masked}", format!("[{pattern_id}]"));
+                }
+                Origin::History { commit, path } => {
+                    println!(
+                        "{:<20} commit {commit}  {path}  {masked}",
+                        format!("[{pattern_id}]")
+                    );
                 }
             },
         }

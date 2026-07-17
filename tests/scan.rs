@@ -133,3 +133,36 @@ fn secret_inside_env_example_is_still_scanned() {
             .and(predicate::str::contains(secret.as_str()).not()),
     );
 }
+
+#[test]
+fn removed_secret_is_found_only_with_history() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"C".repeat(16);
+    std::fs::write(tmp.path().join("deploy.sh"), format!("KEY={secret}\n")).unwrap();
+    commit_all(tmp.path(), "add secret");
+    std::fs::write(tmp.path().join("deploy.sh"), "KEY=redacted\n").unwrap();
+    commit_all(tmp.path(), "remove secret");
+
+    // Working tree is clean now.
+    scan_cmd(tmp.path()).assert().code(0);
+
+    // The introducing commit (HEAD~1) must be named in the finding.
+    let out = GitCommand::new("git")
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["rev-parse", "HEAD~1"])
+        .output()
+        .unwrap();
+    let full_hash = String::from_utf8(out.stdout).unwrap();
+    let short_hash = full_hash.trim()[..12].to_string();
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--history");
+    cmd.assert().code(1).stdout(
+        predicate::str::contains("[aws-access-key-id]")
+            .and(predicate::str::contains(format!("commit {short_hash}")))
+            .and(predicate::str::contains("deploy.sh"))
+            .and(predicate::str::contains(secret.as_str()).not()),
+    );
+}
