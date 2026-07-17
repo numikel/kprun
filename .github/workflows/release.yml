@@ -165,4 +165,3 @@ jobs:
           generate_release_notes: false
           files: |
             release/*
-            release/checksums.txt.minisig
