@@ -184,6 +184,21 @@ pub enum Commands {
         #[arg(long, requires = "delete_vault")]
         yes: bool,
     },
+    /// Fast heuristic check for committed secrets. Not a substitute for dedicated scanners like gitleaks or trufflehog
+    Scan {
+        /// Directory inside the git repository to scan (default: current directory)
+        #[arg(long)]
+        path: Option<String>,
+        /// Additionally scan git history (git log -p, last 500 commits)
+        #[arg(long)]
+        history: bool,
+        /// Scan the entire history without the 500-commit limit
+        #[arg(long, requires = "history")]
+        full_history: bool,
+        /// Print findings as one compact JSON document on stdout
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -380,5 +395,58 @@ mod tests {
     #[test]
     fn migrate_requires_file() {
         assert!(Cli::try_parse_from(["kprun", "migrate"]).is_err());
+    }
+
+    #[test]
+    fn scan_parses_flags() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "scan",
+            "--path",
+            "sub/dir",
+            "--history",
+            "--full-history",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Scan {
+                path,
+                history,
+                full_history,
+                json,
+            } => {
+                assert_eq!(path.as_deref(), Some("sub/dir"));
+                assert!(history);
+                assert!(full_history);
+                assert!(json);
+            }
+            _ => panic!("expected Commands::Scan"),
+        }
+    }
+
+    #[test]
+    fn scan_defaults_are_off() {
+        let cli = Cli::try_parse_from(["kprun", "scan"]).unwrap();
+        match cli.command {
+            Commands::Scan {
+                path,
+                history,
+                full_history,
+                json,
+            } => {
+                assert!(path.is_none());
+                assert!(!history);
+                assert!(!full_history);
+                assert!(!json);
+            }
+            _ => panic!("expected Commands::Scan"),
+        }
+    }
+
+    #[test]
+    fn full_history_requires_history() {
+        assert!(Cli::try_parse_from(["kprun", "scan", "--full-history"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "scan", "--history", "--full-history"]).is_ok());
     }
 }

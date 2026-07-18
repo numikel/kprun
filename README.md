@@ -386,6 +386,7 @@ kprun delete <entry>
 kprun export [--format json|dotenv] [--stdout] [--reveal]
 kprun import <file> [--merge]
 kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
+kprun scan   [--path DIR] [--history [--full-history]] [--json]
 kprun doctor [--mcp <entry>]
 kprun reveal-master
 kprun deinit [--delete-vault [--yes]]
@@ -401,6 +402,7 @@ Notes:
 - `import` without `--merge` replaces vault content; structure-only dotenv exports are rejected to prevent accidental wipes.
 - `migrate` imports a plain project `.env` (no title comments needed) into a single entry named after the file's directory, then offers to add the file to `.gitignore`; the source file is kept unless you pass `--delete`. Keys with empty or whitespace-only values are skipped with a stderr warning — the vault backend cannot store them.
 - Exit codes: `1` for DB not found, entry not found, unlock failed, DB locked; child exit code propagated; empty injection → `0` with stderr warning.
+- `scan` exit codes (grep-style, CI-friendly): `0` clean, `1` findings, `2` execution error (git missing, `--path` outside a repository).
 
 ### Export and import
 
@@ -629,6 +631,34 @@ cargo test --all-features
   GITHUB_TOKEN=ghp_xxx
   EOF
   ```
+
+### Secret scanning (`kprun scan`)
+
+`kprun scan` is a **fast, high-confidence heuristic**: prefix-anchored
+matching for well-known key formats over all git-tracked files, plus
+detection of tracked `.env` files (`.env.example` / `.env.sample` /
+`.env.template` / `.env.dist` count as templates — not flagged as files,
+but their content is still scanned). With `--history` it also scans lines
+added in `git log -p` (last 500 commits; `--full-history` removes the
+limit). Both the working-tree and `--history` scans are scoped to `--path`;
+history covers commits reachable from `HEAD` (not unmerged branches,
+stashes, or commits reachable only from other refs).
+
+- It is **not** a substitute for a dedicated scanner — run
+  [gitleaks](https://github.com/gitleaks/gitleaks) or
+  [trufflehog](https://github.com/trufflesecurity/trufflehog) for a full
+  audit.
+- Detected: AWS access key IDs (`AKIA…`), GitHub tokens (`ghp_…` family
+  and `github_pat_…`), OpenAI project keys (`sk-proj-…`), Anthropic keys
+  (`sk-ant-…`), Stripe keys (`sk_live_…` / `sk_test_…`), Google API keys
+  (`AIza…`), Slack tokens (`xoxb-…` family), GitLab PATs (`glpat-…`), and
+  private-key blocks (`-----BEGIN … PRIVATE KEY-----`).
+- Knowingly undetected: legacy OpenAI `sk-…` keys — the bare `sk-` prefix
+  is too ambiguous to match with high confidence.
+- Findings are always **masked** (`ghp_x7Kq…(40 chars)`): the full secret
+  value never appears in scan output, `--json` included.
+- `--json` prints a single machine-readable document (`"version": 1`)
+  with findings and scan stats for CI consumption.
 
 ### Audit log format
 
