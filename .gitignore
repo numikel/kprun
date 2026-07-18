@@ -1,23 +1,42 @@
+# Rust build artifacts
 /target/
+target-alt/
+target-*/
+**/*.rs.bk
+
+# Secrets and cryptography
 **/*.kdbx
 **/*.keyfile
+kprun-release.key
+kprun-release.pub
+.env
+.env.*
+
+# Claude Code / superpowers workflow
+.superpowers/
+.claude/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.docs/
+.worktrees/
+
+# IDE and editor settings
+.cursor/
+.vscode/
+.idea/
+.ai/
+
+# Editor temporary files
+*.swp
+*.swo
+*~
+
+# OS artifacts
 .DS_Store
+
+# Documentation (keep changelogs and gif, ignore generated)
 docs/*
 !docs/kprun.gif
 !docs/changelogs/
 !docs/changelogs/**
 !docs/TESTING.md
-.claude/
-.superpowers/
-.cursor/
-.docs/
-.ai/
-.worktrees/
-kprun-release.key
-kprun-release.pub
-target-alt/
-target-*/
-.env
-.env.*
-.claude/settings.local.json
-.claude/scheduled_tasks.lock

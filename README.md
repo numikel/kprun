@@ -9,7 +9,10 @@
 
 **Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
 
-[Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md) · [Install](#installation) · [Quick start](#quick-start) · [Scripts & automation](#scripts-and-automation) · [Coding agents & OpenRouter](#coding-agents-and-openrouter) · [MCP integration](#mcp-integration) · [Security model](#security-model)
+[Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md)
+
+**Sections:**
+[About](#about) · [How it works](#how-it-works) · [Features](#features) · [Requirements](#requirements) · [Installation](#installation) · [Updating](#updating) · [Quick start](#quick-start) · [Scripts & automation](#scripts-and-automation) · [Coding agents & OpenRouter](#coding-agents-and-openrouter) · [Configuration](#configuration) · [CLI reference](#cli-reference) · [CLI Functions](#cli-functions) · [Export and import](#export-and-import) · [MCP integration](#mcp-integration) · [Automation and cron](#automation-and-cron) · [Project structure](#project-structure) · [Development](#development) · [Security model](#security-model) · [Releases](#releases) · [Contributing](#contributing) · [License](#license)
 
 ---
 
