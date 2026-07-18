@@ -7,7 +7,7 @@
 
 ![kprun demo](docs/kprun.gif)
 
-**Local secrets injector for developers and AI agent workflows.** KeePass `.kdbx` vault (KeePassXC-compatible), OS keychain unlock, per-process env injection — not session-wide.
+**Stop storing API keys in `mcp.json` and shell profiles.** kprun solves this by keeping secrets in an encrypted KeePass vault and injecting them only into spawned processes — no shell-wide exports, no plaintext config files. Designed for MCP servers, coding agents, and dev scripts. Features: per-process injection, audit logging (key names only), cross-platform (Linux/macOS/Windows), KeePassXC-compatible, CI/CD-ready.
 
 [Releases](https://github.com/numikel/kprun/releases) · [Changelog](CHANGELOG.md)
 
