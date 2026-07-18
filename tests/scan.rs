@@ -332,3 +332,30 @@ fn history_scan_respects_path_scope() {
         .code(1)
         .stdout(predicate::str::contains("[aws-access-key-id]"));
 }
+
+#[test]
+fn history_scan_survives_non_utf8_content_in_older_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    // Oldest commit: latin-1 text (high bytes, no NUL) — git prints it as a
+    // text patch, so the log stream carries invalid UTF-8. Because `git log`
+    // is newest-first, this bad patch is parsed *after* the secret below;
+    // the scan must keep the already-collected finding, not drop it.
+    std::fs::write(tmp.path().join("legacy.txt"), b"caf\xE9 \xFF bar\n").unwrap();
+    commit_all(tmp.path(), "add latin-1 text");
+    let secret = "AKIA".to_string() + &"E".repeat(16);
+    std::fs::write(tmp.path().join("deploy.sh"), format!("KEY={secret}\n")).unwrap();
+    commit_all(tmp.path(), "add secret");
+    std::fs::write(tmp.path().join("deploy.sh"), "KEY=redacted\n").unwrap();
+    commit_all(tmp.path(), "remove secret");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--history");
+    cmd.assert()
+        .code(1)
+        .stdout(
+            predicate::str::contains("[aws-access-key-id]")
+                .and(predicate::str::contains(secret.as_str()).not()),
+        )
+        .stderr(predicate::str::contains("history scan failed").not());
+}

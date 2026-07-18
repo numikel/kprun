@@ -82,10 +82,29 @@ pub fn stream_log_patch(
 
     // Drain stdout to EOF first; git finishes writing before we touch its
     // (small) stderr, so the unread stderr pipe cannot fill and deadlock.
+    //
+    // Read raw bytes per line, not `BufRead::lines()`: patch content may be
+    // any encoding (latin-1, cp1252, …) and one invalid-UTF-8 line must not
+    // abort the whole scan. Patterns are pure ASCII, so lossy conversion
+    // cannot corrupt a match — same rationale as the working-tree scan.
     let stdout = child.stdout.take().expect("stdout is piped");
-    for line in BufReader::new(stdout).lines() {
-        let line = line.map_err(|e| format!("reading git output: {e}"))?;
-        sink(&line);
+    let mut reader = BufReader::new(stdout);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        let n = reader
+            .read_until(b'\n', &mut buf)
+            .map_err(|e| format!("reading git output: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        if buf.last() == Some(&b'\n') {
+            buf.pop();
+        }
+        if buf.last() == Some(&b'\r') {
+            buf.pop();
+        }
+        sink(&String::from_utf8_lossy(&buf));
     }
 
     let status = child.wait().map_err(|e| format!("waiting on git: {e}"))?;
