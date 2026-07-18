@@ -116,13 +116,16 @@ fn unquote_git_path(s: &str) -> String {
                     out.push(b'\r');
                     i += 2;
                 }
-                b'0'..=b'7' if i + 4 <= bytes.len() => {
-                    match u8::from_str_radix(&s[i + 1..i + 4], 8) {
-                        Ok(v) => {
+                b'0'..=b'7' => {
+                    match s
+                        .get(i + 1..i + 4)
+                        .and_then(|oct| u8::from_str_radix(oct, 8).ok())
+                    {
+                        Some(v) => {
                             out.push(v);
                             i += 4;
                         }
-                        Err(_) => {
+                        None => {
                             out.push(bytes[i]);
                             i += 1;
                         }
@@ -297,6 +300,35 @@ mod tests {
                 assert_eq!(path, "f.txt");
             }
             other => panic!("unexpected finding: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn log_parser_survives_octal_escape_before_multibyte_char() {
+        let secret = aws('R');
+        let hash = "dddddddddddd".to_string() + &"0".repeat(28);
+        // `\3€` — an octal-digit escape start immediately followed by a 3-byte char.
+        // The end index of the would-be `\NNN` slice lands mid-character; the parser
+        // must not panic, and must still attribute the secret on the next added line.
+        let patch = format!("{hash}\n+++ \"b/\\3€.txt\"\n+k={secret}\n");
+        let (findings, commits) = scan_log_patch(&patch);
+        assert_eq!(commits, 1);
+        assert_eq!(
+            findings.len(),
+            1,
+            "secret on the added line must still be found"
+        );
+        // Masking still absolute: the raw secret must not appear in the reported path/mask.
+        if let Finding::Secret {
+            masked,
+            origin: Origin::History { path, .. },
+            ..
+        } = &findings[0]
+        {
+            assert!(!masked.contains(&secret));
+            assert!(!path.contains(&secret));
+        } else {
+            panic!("expected a history Secret finding");
         }
     }
 
