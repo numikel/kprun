@@ -383,26 +383,575 @@ kprun get    <entry> [--keys] [--reveal]
 kprun set    <entry> KEY=val [KEY2=val2 ...] | --stdin
 kprun unset  <entry> KEY [KEY2 ...]
 kprun delete <entry>
-kprun export [--format json|dotenv] [--stdout] [--reveal]
+kprun export [--format json|dotenv] [--stdout] [--reveal] [--output PATH]
 kprun import <file> [--merge]
 kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
 kprun scan   [--path DIR] [--history [--full-history]] [--json]
-kprun doctor [--mcp <entry>]
-kprun reveal-master
-kprun deinit [--delete-vault [--yes]]
+kprun doctor [--mcp <entry>] [-- <command>...]
+kprun mcp    -e <entry> [--header "Name: template"]... [--bearer FIELD] [--transport auto|streamable-http|sse] [--timeout SECS] [--allow-insecure-http] <url>
+kprun reveal-master [--db PATH]
+kprun deinit [--db PATH] [--delete-vault [--yes]]
 ```
 
-Notes:
+For detailed workflow examples, see [Export and import](#export-and-import), [MCP integration](#mcp-integration), and [Automation and cron](#automation-and-cron) below.
 
-- `get` and `export` show key **names** by default; use `--reveal` only when you need values (stderr warning + audit).
-- `init --quick` generates a 128-bit master password, creates a password-only vault, and stores the password in the OS keychain; the password is printed **once** on stdout. `--force` overwrites an existing vault after interactive confirmation. `KPRUN_KEYFILE` is ignored with a warning.
-- `reveal-master` prints the stored master password to stdout (stderr warning + audit record) — pipe-friendly, e.g. `kprun reveal-master | clip`.
-- `deinit --delete-vault` deletes the keychain entry **and** the vault file after confirmation (`--yes` skips the prompt); the keyfile and audit log are never touched.
-- `run` inherits stdio to the child and writes **nothing** to stdout (MCP-safe).
-- `import` without `--merge` replaces vault content; structure-only dotenv exports are rejected to prevent accidental wipes.
-- `migrate` imports a plain project `.env` (no title comments needed) into a single entry named after the file's directory, then offers to add the file to `.gitignore`; the source file is kept unless you pass `--delete`. Keys with empty or whitespace-only values are skipped with a stderr warning — the vault backend cannot store them.
-- Exit codes: `1` for DB not found, entry not found, unlock failed, DB locked; child exit code propagated; empty injection → `0` with stderr warning.
-- `scan` exit codes (grep-style, CI-friendly): `0` clean, `1` findings, `2` execution error (git missing, `--path` outside a repository).
+---
+
+## CLI Functions
+
+### `kprun init`
+
+**Purpose**: Create a new KeePass vault or attach an existing one. The vault stores secrets in a `.kdbx` file and the master password can be stored in the OS keychain for automatic unlocking.
+
+**Syntax**:
+```
+kprun init [--db PATH] [--no-store] [--keyfile PATH] [--quick [--force]]
+```
+
+**Options**:
+- `--db PATH` — Path to the KeePass database (default: `~/.kprun/secrets.kdbx` or `KPRUN_DB` env var). If the path points to an existing database, kprun verifies unlock and optionally stores the master password in the keychain.
+- `--keyfile PATH` — Path to a cryptographic key file (256 random bits encoded as hex). Created if missing. Acts as a second factor alongside the master password; both are required to unlock. Useful for automation when the OS keychain is unavailable (cron, Task Scheduler).
+- `--no-store` — Do not store the master password in the OS keychain. Requires interactive prompts on every `kprun` command. Incompatible with `kprun mcp` (which cannot prompt).
+- `--quick` — Non-interactive setup: generates a random 128-bit master password (printed once to stdout), creates a password-only vault (no keyfile required), and stores the password in the OS keychain. **Save the printed password** — you will need it to open the vault in KeePassXC. Incompatible with `--keyfile` and `--no-store`.
+- `--force` — Requires `--quick`. Overwrites an existing vault after confirmation; does not ask interactively, assumes `yes`.
+
+**Limitations**:
+- The vault file is stored as plaintext on disk (encrypted inside the `.kdbx` format). If the vault is compromised, all secrets are at risk.
+- Empty custom-field values cannot be stored — the KDBX backend drops them on save.
+- After updating from v0.4.x to v0.5.0+, the keychain account name changed (lexical path → SHA-256). Re-run `kprun init --quick` on temporary vaults to update the keychain entry.
+
+**Examples**:
+```bash
+# Quick setup: auto-generated password, stored in keychain
+kprun init --quick
+# ⚠️ SAVE THE MASTER PASSWORD PRINTED ABOVE
+
+# Custom database path with keyfile
+kprun init --db /vault/secrets.kdbx --keyfile /vault/master.key
+
+# Attach an existing KeePassXC database
+kprun init --db ~/Documents/MyPasswords.kdbx
+
+# Re-initialize vault (overwrites after confirmation)
+kprun init --quick --force
+```
+
+---
+
+### `kprun run`
+
+**Purpose**: Inject secrets from vault entries into a child process environment. The child process inherits only the injected variables plus a safe default environment (PATH, HOME, etc.). Nothing is exported to your shell profile.
+
+**Syntax**:
+```
+kprun run [--clean-env] <entry> [entry2 ...] -- <command> [args...]
+```
+
+**Arguments**:
+- `<entry> [entry2 ...]` — One or more vault entry titles. Secrets from all entries are merged into the child's environment. If an entry doesn't exist, `kprun` exits with error code `1`.
+- `--` — Required separator that marks where entry names end and the child command begins.
+- `<command> [args...]` — Command to run in the child process. Receives the injected environment variables.
+
+**Options**:
+- `--clean-env` — Inject vault secrets into a minimal, safe environment instead of inheriting parent env. Drops parent variables except PATH, HOME, and a small allowlist. Useful for scripts that should not see unrelated secrets from the parent shell.
+
+**Limitations**:
+- The child process exits with the same exit code as the command (non-zero signals are reported as 128 + signal number on Unix).
+- Duplicate entry names are silently deduplicated.
+- If multiple entries define the same key, the last entry's value wins (collision handling follows POSIX env-var precedent).
+- The `--` separator is **mandatory** — without it, every positional argument is parsed as an entry name and the command is never found.
+
+**Examples**:
+```bash
+# Run Python with injected secrets from 'myapi' entry
+kprun run myapi -- python script.py
+
+# Multiple entries: secrets from both are merged
+kprun run openai langfuse -- python pipeline.py
+
+# NPX with injected GitHub token
+kprun run github -- npx -y @modelcontextprotocol/server-github
+
+# Run with minimal environment (drops parent env)
+kprun run api --clean-env -- node server.js
+```
+
+---
+
+### `kprun list`
+
+**Purpose**: Display all vault entries and their custom field names (key names), but not values.
+
+**Syntax**:
+```
+kprun list [--json]
+```
+
+**Options**:
+- `--json` — Output as a single JSON array of objects, each with `entry` (entry title) and `keys` (array of field names). Suitable for scripting and CI pipelines.
+
+**Limitations**:
+- Does not show secret values (use `kprun get --reveal` for values on a single entry).
+- Exit code `1` if the vault cannot be opened (missing DB, unlock failed).
+
+**Examples**:
+```bash
+# Human-readable list
+kprun list
+# Output:
+# github
+#   GITHUB_TOKEN
+#   GITHUB_URL
+# openai
+#   OPENAI_API_KEY
+
+# JSON format for scripting
+kprun list --json
+# Output: [{"entry":"github","keys":["GITHUB_TOKEN","GITHUB_URL"]},...]
+
+# Filter entries with jq (requires --json)
+kprun list --json | jq -r '.[].entry'
+```
+
+---
+
+### `kprun get`
+
+**Purpose**: Show custom fields (key names and optionally values) for a single vault entry.
+
+**Syntax**:
+```
+kprun get <entry> [--keys] [--reveal]
+```
+
+**Arguments**:
+- `<entry>` — Vault entry title to read.
+
+**Options**:
+- `--keys` — Print only field names, one per line (default behavior includes both names and placeholder values).
+- `--reveal` — Print full KEY=value lines with secret values. **Triggers a stderr warning and audit log record** — use deliberately. Audit log will record that the value was revealed but never the actual value.
+
+**Limitations**:
+- Entry title lookup is case-insensitive, but duplicates (if they exist) cause an error.
+- Exit code `1` if the entry is not found or the vault cannot be opened.
+- Values are never printed by default — only key names and placeholder `[secret]` text.
+
+**Examples**:
+```bash
+# Show key names only
+kprun get github
+# Output:
+# GITHUB_TOKEN=[secret]
+# GITHUB_URL=[secret]
+
+# Show only the names
+kprun get github --keys
+# Output:
+# GITHUB_TOKEN
+# GITHUB_URL
+
+# Reveal actual values (audit logged)
+kprun get github --reveal
+# Output (+ stderr warning):
+# GITHUB_TOKEN=ghp_xxx...
+# GITHUB_URL=https://github.com
+```
+
+---
+
+### `kprun set`
+
+**Purpose**: Create a new vault entry or update secret fields on an existing entry.
+
+**Syntax**:
+```
+kprun set <entry> KEY=val [KEY2=val2 ...] | --stdin
+```
+
+**Arguments**:
+- `<entry>` — Vault entry title. Created if it doesn't exist.
+- `KEY=val [KEY2=val2 ...]` — One or more `KEY=value` pairs to set. Values are parsed as literal strings (no shell expansion).
+
+**Options**:
+- `--stdin` — Read `KEY=value` lines from stdin instead of argv. Blank lines and `#` comment lines are skipped. **Avoids exposing secrets in shell history or process listings.** Incompatible with positional arguments.
+
+**Limitations**:
+- Empty or whitespace-only values are silently dropped by the KDBX backend and cannot be stored.
+- Inline `kprun set` commands expose secrets to shell history and `ps` output during execution — prefer `--stdin` for sensitive values.
+- Exit code `1` if the vault cannot be opened or unlocked.
+
+**Examples**:
+```bash
+# Set a single key on an existing entry (risky: shows in shell history)
+kprun set github GITHUB_TOKEN=ghp_xxx
+
+# Set multiple keys at once
+kprun set openai OPENAI_API_KEY=sk-... OPENAI_ORG_ID=org-...
+
+# Use stdin to avoid shell history (secure)
+kprun set github --stdin <<'EOF'
+GITHUB_TOKEN=ghp_xxx
+GITHUB_URL=https://github.com
+EOF
+
+# Or pipe from a file
+cat secrets.txt | kprun set myapi --stdin
+```
+
+---
+
+### `kprun unset`
+
+**Purpose**: Remove custom fields (secret keys) from a vault entry without deleting the entry itself.
+
+**Syntax**:
+```
+kprun unset <entry> KEY [KEY2 ...]
+```
+
+**Arguments**:
+- `<entry>` — Vault entry title.
+- `KEY [KEY2 ...]` — One or more field names to remove.
+
+**Limitations**:
+- If a key doesn't exist on the entry, it is silently ignored (no error).
+- Exit code `1` if the entry is not found or the vault cannot be opened.
+- Does not delete the entry — to remove the entire entry, use `kprun delete`.
+
+**Examples**:
+```bash
+# Remove a single key
+kprun unset github GITHUB_TOKEN
+
+# Remove multiple keys
+kprun unset openai OPENAI_API_KEY OPENAI_ORG_ID
+
+# Entry still exists after unset
+kprun get github  # succeeds, but entry has fewer fields
+```
+
+---
+
+### `kprun delete`
+
+**Purpose**: Completely remove a vault entry and all its custom fields.
+
+**Syntax**:
+```
+kprun delete <entry>
+```
+
+**Arguments**:
+- `<entry>` — Vault entry title to delete.
+
+**Limitations**:
+- No confirmation prompt (delete is final).
+- Exit code `1` if the entry is not found or the vault cannot be opened.
+
+**Examples**:
+```bash
+# Permanently delete an entry
+kprun delete old-api
+
+# Entry is now gone
+kprun get old-api  # exits with error "Entry not found"
+```
+
+---
+
+### `kprun export`
+
+**Purpose**: Export vault entries to JSON or dotenv format for backup, migration, or sharing vault structure. **See [Export and import](#export-and-import) section below for workflow details, format examples, and round-trip procedures.**
+
+**Syntax**:
+```
+kprun export [--format json|dotenv] [--stdout] [--reveal] [--output PATH]
+```
+
+**Options**:
+- `--format json|dotenv` — Output format: `json` (default, structured) or `dotenv` (kprun dotenv round-trip).
+- `--stdout` — Write to stdout instead of a file (suitable for piping).
+- `--reveal` — Include secret values in the export (**unencrypted on disk** — use carefully, audit logged).
+- `--output PATH` — Write to this file instead of the default `kprun-export.json` or `.env`.
+
+**Limitations**:
+- By default, key **names** only are exported (values shown as `[secret]`). Use `--reveal` to export actual values.
+- Exit code `1` if the vault cannot be opened or the output file cannot be written.
+
+**Quick examples**:
+```bash
+kprun export --format json --stdout           # JSON to stdout
+kprun export --reveal --output /tmp/backup    # Values to file (unsafe)
+kprun export --format dotenv --stdout         # Dotenv format
+```
+
+---
+
+### `kprun import`
+
+**Purpose**: Import vault entries from JSON or dotenv files. By default replaces all vault content; use `--merge` to add or update without deleting. **See [Export and import](#export-and-import) section below for accepted formats and workflow examples.**
+
+**Syntax**:
+```
+kprun import <file> [--merge]
+```
+
+**Options**:
+- `--merge` — Add or update imported entries; keep others in vault. Without this, entire vault is replaced.
+
+**Limitations**:
+- Generic project `.env` files (no `# entry` headers) cannot be imported — use `kprun migrate` instead.
+- Structure-only exports (no values) are rejected to prevent accidental wipes.
+- Exit code `1` if the file cannot be read or is malformed.
+
+**Quick examples**:
+```bash
+kprun import backup.json                  # Replace vault
+kprun import new-entries.json --merge     # Add to existing vault
+```
+
+---
+
+### `kprun migrate`
+
+**Purpose**: Migrate a standard project `.env` file (flat KEY=value format) into the vault. Automatically names the entry after the file's directory, handles `.gitignore` setup, and can delete the source file after import.
+
+**Syntax**:
+```
+kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
+```
+
+**Arguments**:
+- `<file>` — Path to a standard `.env` file (e.g., `.env`, `config/.env`, `backend/.env`).
+
+**Options**:
+- `--entry <name>` — Vault entry title for the imported secrets (default: name of the directory containing the file, e.g., `.env` → `root`, `backend/.env` → `backend`).
+- `--merge` — Add keys to an existing entry instead of creating a new one.
+- `--gitignore` — Automatically add the file's name to `.gitignore` without prompting (useful for CI).
+- `--delete` — Delete the source `.env` file after successful import. **Only deletes if the file was successfully imported and re-read for byte-identity verification**.
+
+**Limitations**:
+- Only accepts standard `.env` format (no `#` entry headers). For kprun dotenv format, use `kprun import`.
+- Empty or whitespace-only values are skipped with a stderr warning.
+- Exit code `1` if the file cannot be read or parsed.
+- The source file is kept unless `--delete` is passed.
+
+**Examples**:
+```bash
+# Migrate and ask about .gitignore
+kprun migrate backend/.env
+
+# Migrate and automatically handle .gitignore, then delete the file
+kprun migrate backend/.env --gitignore --delete
+
+# Migrate to a custom entry name
+kprun migrate .env --entry prod-secrets --merge
+
+# CI-friendly: minimal interaction, full cleanup
+kprun migrate app/.env --entry app --gitignore --delete
+```
+
+---
+
+### `kprun doctor`
+
+**Purpose**: Diagnose vault configuration and generate a ready-to-paste MCP server config snippet for `mcp.json`.
+
+**Syntax**:
+```
+kprun doctor [--mcp <entry> [-- <command>...]]
+```
+
+**Options**:
+- `--mcp <entry>` — Print a JSON MCP config snippet for this vault entry instead of diagnostics. Suitable for pasting into `mcp.json`.
+- `-- <command>...` — MCP server command to append (e.g., `-- npx -y @modelcontextprotocol/server-github`). Without this, the snippet is incomplete and hints at manual completion.
+
+**Output**:
+- Without `--mcp`: Summary of vault location, unlock method, and configuration issues (if any).
+- With `--mcp <entry>`: A ready-to-paste JSON object for `mcpServers` (Linux/macOS use symlink, Windows use full path).
+
+**Limitations**:
+- If `--mcp` is used without a command, the output is incomplete (only `["run", "<entry>", "--"]`); you must manually add the server command.
+- Exit code `1` if the vault cannot be opened or the entry is not found.
+
+**Examples**:
+```bash
+# Diagnose configuration
+kprun doctor
+
+# Generate MCP snippet for GitHub
+kprun doctor --mcp github -- npx -y @modelcontextprotocol/server-github
+
+# Output:
+# {
+#   "command": "kprun",
+#   "args": ["run", "github", "--", "npx", "-y", "@modelcontextprotocol/server-github"]
+# }
+
+# Copy to your mcp.json:
+# "mcpServers": {
+#   "github": { ... snippet ... }
+# }
+```
+
+---
+
+### `kprun mcp`
+
+**Purpose**: Bridge stdio JSON-RPC messages to a remote HTTP MCP server, injecting vault-backed auth headers. Enables secure, non-interactive access to hosted MCP servers (GitHub Copilot, Context7, etc.) without storing credentials in `mcp.json`. **See [MCP integration](#mcp-integration) section below for detailed setup, transport modes, and authentication patterns.**
+
+**Syntax**:
+```
+kprun mcp -e <entry> [--header "Name: template"]... [--bearer FIELD] \
+  [--transport auto|streamable-http|sse] [--timeout SECS] \
+  [--allow-insecure-http] <url>
+```
+
+**Arguments & Options**:
+- `-e, --entry <entry>` — Vault entry whose custom fields fill `{{FIELD}}` templates.
+- `<url>` — Remote MCP endpoint URL (supports `{{FIELD}}` substitution).
+- `--header "Name: template"` — Extra HTTP header (repeatable), with `{{FIELD}}` substitution.
+- `--bearer FIELD` — Shorthand for `Authorization: Bearer {{FIELD}}`.
+- `--transport auto|streamable-http|sse` — Transport mode (`auto` default, tries Streamable HTTP then legacy SSE fallback).
+- `--timeout SECS` — Per-request timeout (default 30).
+- `--allow-insecure-http` — Allow vault-backed credentials over plaintext `http://` to non-loopback hosts.
+
+**Limitations**:
+- Cannot prompt for password — requires OS keychain or `KPRUN_KEYFILE`.
+- Audit log records entry names and host only, **never credential values**.
+- One audit line written at bridge startup; repeated MCP calls do not add more lines.
+
+**Quick examples**:
+```bash
+kprun mcp -e github --bearer TOKEN https://api.githubcopilot.com/mcp/
+kprun mcp -e context7 --header "CONTEXT7_API_KEY: {{CONTEXT7_API_KEY}}" https://mcp.context7.com/mcp
+```
+
+---
+
+### `kprun reveal-master`
+
+**Purpose**: Print the stored master password for the current vault to stdout. Useful for opening the vault in KeePassXC or for emergency recovery.
+
+**Syntax**:
+```
+kprun reveal-master [--db PATH]
+```
+
+**Options**:
+- `--db PATH` — Path to the KeePass database (default: `KPRUN_DB` or `~/.kprun/secrets.kdbx`).
+
+**Limitations**:
+- Triggers a **stderr warning** and **audit log record** — use deliberately.
+- Exit code `1` if the password cannot be retrieved from the keychain or if the database is not found.
+- Requires the master password to be stored in the OS keychain (set at `kprun init` or re-stored with `kprun init --db <path>`). If `--no-store` was used, the password is not available.
+
+**Examples**:
+```bash
+# Print master password to stdout (with stderr warning)
+kprun reveal-master
+
+# Copy to clipboard (macOS)
+kprun reveal-master | pbcopy
+
+# Copy to clipboard (Linux with xclip)
+kprun reveal-master | xclip -selection clipboard
+
+# Copy to clipboard (Windows PowerShell)
+kprun reveal-master | Set-Clipboard
+```
+
+---
+
+### `kprun deinit`
+
+**Purpose**: Remove the stored master password from the OS keychain, and optionally delete the vault file itself. Useful for cleanup or switching to a different vault.
+
+**Syntax**:
+```
+kprun deinit [--db PATH] [--delete-vault [--yes]]
+```
+
+**Options**:
+- `--db PATH` — Path to the KeePass database (default: `KPRUN_DB` or `~/.kprun/secrets.kdbx`).
+- `--delete-vault` — Also delete the vault file (`.kdbx`). Asks for confirmation unless `--yes` is passed.
+- `--yes` — Requires `--delete-vault`. Skip confirmation prompt and immediately delete the vault file.
+
+**Limitations**:
+- Only removes the keychain entry and vault file — does **not** touch the keyfile (if one exists) or audit log.
+- Exit code `1` if the database is not found or the keychain entry cannot be removed.
+- This is a destructive operation and cannot be undone; `--yes` skips the safety prompt.
+
+**Examples**:
+```bash
+# Remove stored password (vault file is kept)
+kprun deinit
+
+# Remove stored password and delete the vault file (with confirmation)
+kprun deinit --delete-vault
+
+# Remove password and vault, skip confirmation (CI-friendly)
+kprun deinit --delete-vault --yes
+```
+
+---
+
+### `kprun scan`
+
+**Purpose**: Fast heuristic scan for accidentally committed secrets in git-tracked files and history. Detects well-known API key formats (AWS, GitHub, OpenAI, Stripe, etc.). **Not a substitute for dedicated scanners like gitleaks or trufflehog.**
+
+**Syntax**:
+```
+kprun scan [--path DIR] [--history [--full-history]] [--json]
+```
+
+**Options**:
+- `--path DIR` — Directory to scan (default: current directory). Must be inside a git repository.
+- `--history` — Additionally scan git history (`git log -p`, last 500 commits by default).
+- `--full-history` — Requires `--history`. Remove the 500-commit limit and scan entire history.
+- `--json` — Output a single JSON document suitable for CI pipelines. Findings are masked (e.g., `ghp_x7Kq…(40 chars)`).
+
+**Detected formats**:
+- AWS access key IDs (`AKIA…`)
+- GitHub tokens (`ghp_…` family, `github_pat_…`)
+- OpenAI project keys (`sk-proj-…`)
+- Anthropic keys (`sk-ant-…`)
+- Stripe keys (`sk_live_…`, `sk_test_…`)
+- Google API keys (`AIza…`)
+- Slack tokens (`xoxb-…` family)
+- GitLab PATs (`glpat-…`)
+- Private key blocks (`-----BEGIN … PRIVATE KEY-----`)
+
+**Known limitations**:
+- Legacy OpenAI `sk-…` keys (bare prefix) are **not detected** — too ambiguous to match with high confidence.
+- `.env.example`, `.env.sample`, `.env.template`, `.env.dist` are scanned for content but not flagged as files (they are templates).
+- Findings are **masked** (`ghp_x7Kq…(40 chars)`) — full secret values never appear in output.
+
+**Exit codes**:
+- `0` — No findings.
+- `1` — Findings detected.
+- `2` — Execution error (git missing, `--path` outside repository).
+
+**Examples**:
+```bash
+# Scan current directory working tree only
+kprun scan
+
+# Scan and include git history (last 500 commits)
+kprun scan --history
+
+# Scan entire history
+kprun scan --history --full-history
+
+# Scan a subdirectory
+kprun scan --path backend
+
+# JSON output for CI pipelines
+kprun scan --json | jq '.findings'
+
+# Exit code check for CI gates
+kprun scan --history --json && echo "✓ Clean" || echo "✗ Findings detected"
+```
 
 ### Export and import
 
