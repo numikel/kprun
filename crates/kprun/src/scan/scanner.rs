@@ -27,32 +27,48 @@ pub fn scan_file_text(path: &str, text: &str) -> Vec<Finding> {
     findings
 }
 
-/// Scan `git log -p --no-color --format=%H` output. Only added lines
-/// (`+` but not `+++`) are scanned — a secret counts in the commit that
-/// introduced it; removals are skipped because the introducing commit
-/// already reports it. Returns findings and the number of commits seen.
+/// Incremental parser for `git log -p --no-color --format=%H` output, fed
+/// one line at a time. Only added lines (`+` but not `+++`) are scanned — a
+/// secret counts in the commit that introduced it; removals are skipped
+/// because the introducing commit already reports it.
 ///
 /// Heuristic parser: a bare 40- or 64-hex line (SHA-1 or SHA-256) is a commit
 /// boundary (`--format=%H`), `+++ b/<path>` selects the current file.
 /// Content lines always carry a diff prefix char, so they cannot be mistaken
 /// for either marker.
-pub fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
-    let mut findings = Vec::new();
-    let mut commits = 0;
-    let mut commit: Option<String> = None; // short 12-hex
-    let mut file: Option<String> = None;
-    for line in patch.lines() {
+///
+/// State is held across `push_line` calls so history can be streamed
+/// without buffering the entire `git log` in memory.
+pub struct LogPatchScanner {
+    findings: Vec<Finding>,
+    commits: usize,
+    commit: Option<String>, // short 12-hex
+    file: Option<String>,
+}
+
+impl LogPatchScanner {
+    pub fn new() -> Self {
+        Self {
+            findings: Vec::new(),
+            commits: 0,
+            commit: None,
+            file: None,
+        }
+    }
+
+    /// Feed one output line (trailing newline already stripped).
+    pub fn push_line(&mut self, line: &str) {
         if is_commit_hash(line) {
-            commits += 1;
-            commit = Some(line[..12].to_string());
-            file = None;
+            self.commits += 1;
+            self.commit = Some(line[..12].to_string());
+            self.file = None;
         } else if let Some(rest) = line.strip_prefix("+++ ") {
             // `+++ /dev/null` (deletion) yields None and drops later hits.
-            file = parse_diff_target(rest);
+            self.file = parse_diff_target(rest);
         } else if let Some(added) = line.strip_prefix('+') {
-            if let (Some(commit), Some(path)) = (&commit, &file) {
+            if let (Some(commit), Some(path)) = (&self.commit, &self.file) {
                 for hit in patterns::find_in_line(added) {
-                    findings.push(Finding::Secret {
+                    self.findings.push(Finding::Secret {
                         pattern_id: hit.pattern_id,
                         origin: Origin::History {
                             commit: commit.clone(),
@@ -64,7 +80,29 @@ pub fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
             }
         }
     }
-    (findings, commits)
+
+    /// Consume the parser, returning findings and the commit count.
+    pub fn finish(self) -> (Vec<Finding>, usize) {
+        (self.findings, self.commits)
+    }
+}
+
+impl Default for LogPatchScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Scan a fully-buffered `git log -p` patch. Thin wrapper over
+/// `LogPatchScanner` for the unit tests, which hold the whole string in
+/// memory; production streams via `LogPatchScanner` directly.
+#[cfg(test)]
+fn scan_log_patch(patch: &str) -> (Vec<Finding>, usize) {
+    let mut scanner = LogPatchScanner::new();
+    for line in patch.lines() {
+        scanner.push_line(line);
+    }
+    scanner.finish()
 }
 
 fn is_commit_hash(line: &str) -> bool {

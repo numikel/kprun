@@ -216,3 +216,119 @@ fn json_output_on_clean_repo_has_empty_findings_and_exit_zero() {
     assert_eq!(v["version"], 1);
     assert_eq!(v["findings"].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn committed_binary_file_is_skipped_not_scanned() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"F".repeat(16);
+    // A NUL byte in the first 8 KiB marks the file binary; the secret bytes
+    // that follow must never be pattern-scanned.
+    let mut content = vec![0u8, 1, 2, 3];
+    content.extend_from_slice(format!("KEY={secret}\n").as_bytes());
+    std::fs::write(tmp.path().join("blob.bin"), content).unwrap();
+    commit_all(tmp.path(), "add binary");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--json");
+    let assert = cmd.assert().code(0);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(!stdout.contains(&secret));
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["findings"].as_array().unwrap().len(), 0);
+    assert!(v["stats"]["files_skipped"].as_u64().unwrap() >= 1);
+}
+
+#[test]
+fn non_utf8_content_is_still_scanned() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"G".repeat(16);
+    // 0xFF is invalid UTF-8 but not a NUL, so the file is treated as text and
+    // matched via lossy conversion — the ASCII secret must still be found.
+    let mut content = format!("key={secret} ").into_bytes();
+    content.push(0xFF);
+    content.push(b'\n');
+    std::fs::write(tmp.path().join("weird.txt"), content).unwrap();
+    commit_all(tmp.path(), "add non-utf8");
+
+    scan_cmd(tmp.path()).assert().code(1).stdout(
+        predicate::str::contains("[aws-access-key-id]")
+            .and(predicate::str::contains(secret.as_str()).not()),
+    );
+}
+
+#[test]
+fn file_over_5_mib_is_skipped_with_warning() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"H".repeat(16);
+    // Over the 5 MiB cap: the size guard skips it before pattern scanning.
+    let mut content = vec![b'x'; 5 * 1024 * 1024 + 1];
+    content.extend_from_slice(format!("\nKEY={secret}\n").as_bytes());
+    std::fs::write(tmp.path().join("big.txt"), content).unwrap();
+    commit_all(tmp.path(), "add big file");
+
+    scan_cmd(tmp.path())
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("larger than 5 MiB"));
+}
+
+#[test]
+fn full_history_scans_without_commit_limit() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"J".repeat(16);
+    std::fs::write(tmp.path().join("old.sh"), format!("KEY={secret}\n")).unwrap();
+    commit_all(tmp.path(), "introduce secret");
+    std::fs::write(tmp.path().join("old.sh"), "KEY=redacted\n").unwrap();
+    commit_all(tmp.path(), "redact");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.args(["--history", "--full-history", "--json"]);
+    let assert = cmd.assert().code(1);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // Both commits parsed with no `-n` cap: exercises the `None` limit path.
+    assert_eq!(v["stats"]["history_commits"], 2);
+    assert!(v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f["origin"] == "history"));
+    assert!(!stdout.contains(&secret));
+}
+
+#[test]
+fn history_scan_respects_path_scope() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    std::fs::create_dir(tmp.path().join("a")).unwrap();
+    std::fs::create_dir(tmp.path().join("b")).unwrap();
+    let secret = "AKIA".to_string() + &"K".repeat(16);
+    std::fs::write(tmp.path().join("a/deploy.sh"), format!("KEY={secret}\n")).unwrap();
+    std::fs::write(tmp.path().join("b/readme.txt"), "nothing\n").unwrap();
+    commit_all(tmp.path(), "add secret under a");
+    // Remove from the working tree so only history carries the secret.
+    std::fs::write(tmp.path().join("a/deploy.sh"), "KEY=redacted\n").unwrap();
+    commit_all(tmp.path(), "redact");
+
+    // Scanning b/ must not surface a/'s historical secret.
+    let mut in_b = Command::cargo_bin("kprun").unwrap();
+    in_b.arg("scan")
+        .arg("--path")
+        .arg(tmp.path().join("b"))
+        .arg("--history");
+    in_b.assert().code(0);
+
+    // Scanning a/ must surface it.
+    let mut in_a = Command::cargo_bin("kprun").unwrap();
+    in_a.arg("scan")
+        .arg("--path")
+        .arg(tmp.path().join("a"))
+        .arg("--history");
+    in_a.assert()
+        .code(1)
+        .stdout(predicate::str::contains("[aws-access-key-id]"));
+}

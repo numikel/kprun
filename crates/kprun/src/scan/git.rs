@@ -1,7 +1,8 @@
 //! Thin `git` process runner for the scanner. This is deliberately the only
 //! `Command::new("git")` call site in non-test code.
 
-use std::process::Command;
+use std::io::{BufRead, BufReader, Read};
+use std::process::{Command, Stdio};
 
 use super::ScanError;
 
@@ -53,20 +54,52 @@ pub fn head_exists(path: &str) -> bool {
     run_git(path, &["rev-parse", "--verify", "HEAD"]).is_ok()
 }
 
-/// Full `git log -p` output. `limit` caps the number of commits from
-/// HEAD; `None` scans the entire history (`--full-history`).
-pub fn log_patch(path: &str, limit: Option<usize>) -> Result<String, ScanError> {
-    let mut args = vec![
-        "log".to_string(),
-        "-p".to_string(),
-        "--no-color".to_string(),
-        "--format=%H".to_string(),
-    ];
+/// Stream `git log -p` output into `sink`, one line at a time. `limit` caps
+/// the number of commits from HEAD; `None` scans the reachable history
+/// (`--full-history`). The patch is never buffered whole, so memory stays
+/// bounded regardless of history size.
+///
+/// Scoped with the `-- .` pathspec under `git -C <path>`, so history honors
+/// `--path` exactly like the working-tree scan (both run relative to
+/// `<path>`). History still only covers commits reachable from `HEAD`.
+pub fn stream_log_patch(
+    path: &str,
+    limit: Option<usize>,
+    mut sink: impl FnMut(&str),
+) -> Result<(), ScanError> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(path)
+        .args(["log", "-p", "--no-color", "--format=%H"]);
     if let Some(n) = limit {
-        args.push("-n".to_string());
-        args.push(n.to_string());
+        cmd.arg("-n").arg(n.to_string());
     }
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = run_git(path, &arg_refs)?;
-    Ok(String::from_utf8_lossy(&out).into_owned())
+    // Scope to the same subtree the working-tree scan covers.
+    cmd.arg("--").arg(".");
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("failed to run git: {e}"))?;
+
+    // Drain stdout to EOF first; git finishes writing before we touch its
+    // (small) stderr, so the unread stderr pipe cannot fill and deadlock.
+    let stdout = child.stdout.take().expect("stdout is piped");
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|e| format!("reading git output: {e}"))?;
+        sink(&line);
+    }
+
+    let status = child.wait().map_err(|e| format!("waiting on git: {e}"))?;
+    if status.success() {
+        return Ok(());
+    }
+    let mut stderr = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut stderr);
+    }
+    let msg = stderr.trim();
+    if msg.is_empty() {
+        Err("git log failed".to_string())
+    } else {
+        Err(msg.to_string())
+    }
 }

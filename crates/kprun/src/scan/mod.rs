@@ -132,10 +132,19 @@ pub fn run_scan(path: &str, history: bool, full_history: bool) -> Result<ScanOut
             } else {
                 Some(HISTORY_COMMIT_LIMIT)
             };
-            let patch = git::log_patch(path, limit)?;
-            let (history_findings, commits) = scanner::scan_log_patch(&patch);
-            findings.extend(history_findings);
-            stats.history_commits = commits;
+            let mut hist = scanner::LogPatchScanner::new();
+            match git::stream_log_patch(path, limit, |line| hist.push_line(line)) {
+                Ok(()) => {
+                    let (history_findings, commits) = hist.finish();
+                    findings.extend(history_findings);
+                    stats.history_commits = commits;
+                }
+                // History is an add-on to the working-tree scan. A git failure
+                // here must not discard working-tree findings nor mask their
+                // exit-1 signal behind exit 2 — warn and keep the WT result,
+                // mirroring the no-commits branch below.
+                Err(e) => eprintln!("warning: history scan failed: {e}"),
+            }
         } else {
             eprintln!("warning: repository has no commits; skipping history scan");
         }
