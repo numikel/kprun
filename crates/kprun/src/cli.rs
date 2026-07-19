@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::commands::agents::AgentsAction;
 use crate::mcp_bridge::Transport;
 
 #[derive(Parser)]
@@ -198,6 +199,11 @@ pub enum Commands {
         /// Print findings as one compact JSON document on stdout
         #[arg(long)]
         json: bool,
+    },
+    /// Install a secrets policy for coding agents (AGENTS.md / CLAUDE.md)
+    Agents {
+        #[command(subcommand)]
+        action: AgentsAction,
     },
 }
 
@@ -448,5 +454,19 @@ mod tests {
     fn full_history_requires_history() {
         assert!(Cli::try_parse_from(["kprun", "scan", "--full-history"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "scan", "--history", "--full-history"]).is_ok());
+    }
+
+    #[test]
+    fn agents_print_parses() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "print"]).unwrap();
+        match cli.command {
+            Commands::Agents { action } => assert!(matches!(action, AgentsAction::Print)),
+            _ => panic!("expected Commands::Agents"),
+        }
+    }
+
+    #[test]
+    fn agents_requires_subcommand() {
+        assert!(Cli::try_parse_from(["kprun", "agents"]).is_err());
     }
 }

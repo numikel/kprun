@@ -93,6 +93,10 @@ required-features = ["test-hooks"]
 name = "scan"
 path = "../../tests/scan.rs"
 
+[[test]]
+name = "agents"
+path = "../../tests/agents.rs"
+
 [features]
 default = []
 test-hooks = ["kprun-core/test-hooks"]
