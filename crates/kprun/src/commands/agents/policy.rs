@@ -52,7 +52,9 @@ pub(crate) enum WriteOutcome {
 /// Create the file with the block, replace an existing marker-delimited
 /// block, or append the block after a blank line — everything outside the
 /// markers stays byte-for-byte untouched. Missing parent directories are
-/// created (plain `std::fs`: these files must be committable, not 0600).
+/// created. Writes keep default permissions (these files must be
+/// committable, not 0600) but go through a temp sibling + rename so a
+/// mid-write crash can never truncate a hand-authored file.
 pub(crate) fn install_block(path: &Path) -> Result<WriteOutcome> {
     let content = match std::fs::read_to_string(path) {
         Ok(content) => content,
@@ -62,7 +64,7 @@ pub(crate) fn install_block(path: &Path) -> Result<WriteOutcome> {
                     std::fs::create_dir_all(parent).map_err(|e| io_err(path, &e))?;
                 }
             }
-            std::fs::write(path, POLICY_BLOCK).map_err(|e| io_err(path, &e))?;
+            write_atomic(path, POLICY_BLOCK).map_err(|e| io_err(path, &e))?;
             return Ok(WriteOutcome::Created);
         }
         Err(e) => return Err(io_err(path, &e)),
@@ -70,10 +72,32 @@ pub(crate) fn install_block(path: &Path) -> Result<WriteOutcome> {
     match updated_content(path, &content)? {
         None => Ok(WriteOutcome::Unchanged),
         Some(new) => {
-            std::fs::write(path, new).map_err(|e| io_err(path, &e))?;
+            write_atomic(path, &new).map_err(|e| io_err(path, &e))?;
             Ok(WriteOutcome::Updated)
         }
     }
+}
+
+/// Write `contents` to `path` via a temp sibling + `rename`, so the target
+/// only ever holds the old or the new full content — `fs::rename` replaces
+/// existing files atomically on Unix and Windows alike. The temp file is
+/// removed on failure; pid suffix keeps concurrent installs from colliding.
+fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(format!(".kprun-tmp-{}", std::process::id()));
+    let tmp = std::path::PathBuf::from(tmp);
+    let result = (|| {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 /// Whether `path` contains a well-formed policy block (start marker with a
@@ -189,6 +213,20 @@ mod tests {
         install_block(&path).unwrap();
         assert_eq!(install_block(&path).unwrap(), WriteOutcome::Unchanged);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), POLICY_BLOCK);
+    }
+
+    #[test]
+    fn leaves_no_temp_siblings_after_create_and_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Created);
+        std::fs::write(&path, "# Notes\n").unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Updated);
+        let names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["AGENTS.md"], "temp sibling must not survive");
     }
 
     #[test]
