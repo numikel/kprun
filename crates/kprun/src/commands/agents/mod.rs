@@ -10,25 +10,43 @@ use crate::ui;
 use super::run_command;
 
 pub(crate) mod policy;
+pub(crate) mod targets;
 
 use policy::WriteOutcome;
+use targets::Target;
 
 #[derive(clap::Subcommand)]
 pub(crate) enum AgentsAction {
     /// Print the canonical policy block to stdout
     Print,
-    /// Install the policy block into AGENTS.md and CLAUDE.md
+    /// Install the policy block into agent instruction files
     Install {
-        /// Target directory (default: current directory)
-        #[arg(long)]
+        /// Target directory for repo-level install (default: current directory)
+        #[arg(long, conflicts_with = "global")]
         path: Option<String>,
+        /// Write the global instruction files of installed agents instead of repo files
+        #[arg(short = 'g', long)]
+        global: bool,
+        /// Comma-separated tools to install for, skipping auto-detection (requires -g)
+        #[arg(long, value_delimiter = ',', requires = "global")]
+        target: Vec<Target>,
     },
 }
 
 pub(crate) fn execute(action: AgentsAction) -> i32 {
     run_command(|| match action {
         AgentsAction::Print => print(),
-        AgentsAction::Install { path } => install_repo(path),
+        AgentsAction::Install {
+            path,
+            global,
+            target,
+        } => {
+            if global {
+                install_global(target)
+            } else {
+                install_repo(path)
+            }
+        }
     })
 }
 
@@ -51,6 +69,79 @@ fn install_repo(path: Option<String>) -> Result<()> {
         report(&file, outcome);
     }
     Ok(())
+}
+
+/// Global install: write the policy block into the global instruction
+/// files of detected (or explicitly targeted) agents. One file's failure
+/// does not abort the rest; exit is non-zero when anything failed.
+fn install_global(explicit: Vec<Target>) -> Result<()> {
+    let home = kprun_core::config::home_dir();
+    let copilot_home = std::env::var_os("COPILOT_HOME").map(PathBuf::from);
+    let auto_detected = explicit.is_empty();
+    let tools = if auto_detected {
+        targets::detect_installed(&home, copilot_home.as_deref())
+    } else {
+        explicit
+    };
+
+    if auto_detected {
+        ui::info(
+            "copilot (VS Code): no global file — covered by repo-level AGENTS.md / \
+             .github/copilot-instructions.md; global instructions live in VS Code settings",
+        );
+        if tools.is_empty() {
+            ui::info(
+                "no supported agents detected in HOME; use --target <tool> to install explicitly",
+            );
+            return Ok(());
+        }
+    }
+
+    let mut attempted = 0usize;
+    let mut failed = 0usize;
+    for tool in tools {
+        let Some(file) = targets::target_file(tool, &home, copilot_home.as_deref()) else {
+            ui::info("cursor: global rules are GUI-only; repo-level AGENTS.md covers Cursor");
+            continue;
+        };
+        attempted += 1;
+        match policy::install_block(&file) {
+            Ok(outcome) => {
+                report(&file, outcome);
+                if tool == Target::Windsurf {
+                    warn_windsurf_limit(&file);
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                ui::info(&format!("error: {e}"));
+            }
+        }
+    }
+    if failed > 0 {
+        return Err(kprun_core::KprunError::Other(format!(
+            "{failed} of {attempted} global installs failed"
+        )));
+    }
+    Ok(())
+}
+
+/// Windsurf reads a single always-on global rules file capped at 6,000
+/// characters; warn when the freshly written file exceeds it (Windsurf
+/// may ignore the overflow) but never refuse the write.
+const WINDSURF_CHAR_LIMIT: usize = 6_000;
+
+fn warn_windsurf_limit(file: &Path) {
+    let Ok(content) = std::fs::read_to_string(file) else {
+        return;
+    };
+    if content.chars().count() > WINDSURF_CHAR_LIMIT {
+        ui::info(&format!(
+            "warning: {} exceeds Windsurf's 6,000-character global rules limit; \
+             Windsurf may ignore content beyond the limit",
+            file.display()
+        ));
+    }
 }
 
 fn report(file: &Path, outcome: WriteOutcome) {

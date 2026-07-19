@@ -137,3 +137,132 @@ fn corrupted_markers_error_without_writing() {
     // AGENTS.md is processed first and fails fast — CLAUDE.md is never written.
     assert!(!dir.path().join("CLAUDE.md").exists());
 }
+
+/// kprun pointed at a fake HOME (both `HOME` and `USERPROFILE`, so the
+/// resolution in kprun-core's `home_dir()` picks it up on every platform).
+fn kprun_with_home(home: &std::path::Path) -> Command {
+    let mut cmd = kprun();
+    cmd.env("HOME", home).env("USERPROFILE", home);
+    cmd
+}
+
+#[test]
+fn global_install_detects_agents_by_config_dirs() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .success();
+    assert!(home.path().join(".claude").join("CLAUDE.md").exists());
+    assert!(home.path().join(".codex").join("AGENTS.md").exists());
+    assert!(
+        !home.path().join(".config").exists(),
+        "undetected tools get no files"
+    );
+}
+
+#[test]
+fn global_install_with_target_creates_missing_dirs() {
+    let home = tempfile::tempdir().unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g", "--target", "opencode"])
+        .assert()
+        .success();
+    let file = home
+        .path()
+        .join(".config")
+        .join("opencode")
+        .join("AGENTS.md");
+    assert!(std::fs::read_to_string(&file)
+        .unwrap()
+        .starts_with("<!-- kprun:agent-policy:start -->"));
+}
+
+#[test]
+fn global_install_honors_copilot_home() {
+    let home = tempfile::tempdir().unwrap();
+    let copilot = tempfile::tempdir().unwrap();
+    kprun_with_home(home.path())
+        .env("COPILOT_HOME", copilot.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .success();
+    assert!(copilot.path().join("copilot-instructions.md").exists());
+    assert!(!home.path().join(".copilot").exists());
+}
+
+#[test]
+fn global_install_cursor_warns_and_writes_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".cursor")).unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("Cursor"));
+    let entries = std::fs::read_dir(home.path().join(".cursor"))
+        .unwrap()
+        .count();
+    assert_eq!(entries, 0, "Cursor has no global rules file");
+}
+
+#[test]
+fn global_install_nothing_detected_hints_target() {
+    let home = tempfile::tempdir().unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("--target"));
+}
+
+#[test]
+fn global_install_windsurf_warns_over_char_limit() {
+    let home = tempfile::tempdir().unwrap();
+    let memories = home
+        .path()
+        .join(".codeium")
+        .join("windsurf")
+        .join("memories");
+    std::fs::create_dir_all(&memories).unwrap();
+    std::fs::write(
+        memories.join("global_rules.md"),
+        format!("{}\n", "x".repeat(6_500)),
+    )
+    .unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("6,000-character"));
+    let content = std::fs::read_to_string(memories.join("global_rules.md")).unwrap();
+    assert!(
+        content.starts_with(&"x".repeat(6_500)),
+        "user content preserved"
+    );
+    assert!(
+        content
+            .trim_end()
+            .ends_with("<!-- kprun:agent-policy:end -->"),
+        "block still written"
+    );
+}
+
+#[test]
+fn global_install_partial_failure_exits_nonzero_but_continues() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+    // A directory named AGENTS.md forces an IO error for codex only.
+    std::fs::create_dir_all(home.path().join(".codex").join("AGENTS.md")).unwrap();
+    kprun_with_home(home.path())
+        .args(["agents", "install", "-g"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("1 of 2 global installs failed"));
+    assert!(
+        home.path().join(".claude").join("CLAUDE.md").exists(),
+        "claude still installed despite codex failure"
+    );
+}

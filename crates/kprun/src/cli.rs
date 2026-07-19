@@ -218,6 +218,7 @@ pub enum ExportFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::agents::targets::Target;
     use clap::Parser;
 
     #[test]
@@ -475,7 +476,7 @@ mod tests {
         let cli = Cli::try_parse_from(["kprun", "agents", "install"]).unwrap();
         match cli.command {
             Commands::Agents {
-                action: AgentsAction::Install { path },
+                action: AgentsAction::Install { path, .. },
             } => assert!(path.is_none()),
             _ => panic!("expected agents install"),
         }
@@ -486,9 +487,50 @@ mod tests {
         let cli = Cli::try_parse_from(["kprun", "agents", "install", "--path", "sub/dir"]).unwrap();
         match cli.command {
             Commands::Agents {
-                action: AgentsAction::Install { path },
+                action: AgentsAction::Install { path, .. },
             } => assert_eq!(path.as_deref(), Some("sub/dir")),
             _ => panic!("expected agents install"),
         }
+    }
+
+    #[test]
+    fn agents_install_path_conflicts_with_global() {
+        assert!(Cli::try_parse_from(["kprun", "agents", "install", "--path", "x", "-g"]).is_err());
+    }
+
+    #[test]
+    fn agents_install_target_requires_global() {
+        assert!(Cli::try_parse_from(["kprun", "agents", "install", "--target", "claude"]).is_err());
+    }
+
+    #[test]
+    fn agents_install_parses_target_list() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "agents",
+            "install",
+            "-g",
+            "--target",
+            "claude,codex",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { global, target, .. },
+            } => {
+                assert!(global);
+                assert_eq!(target, vec![Target::Claude, Target::Codex]);
+            }
+            _ => panic!("expected agents install"),
+        }
+    }
+
+    #[test]
+    fn agents_install_rejects_unknown_target() {
+        assert!(
+            Cli::try_parse_from(["kprun", "agents", "install", "-g", "--target", "gemini"])
+                .is_err(),
+            "Gemini CLI is deliberately unsupported"
+        );
     }
 }
