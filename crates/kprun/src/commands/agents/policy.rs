@@ -1,6 +1,13 @@
 //! Canonical agent policy block. The marker-based file engine that
 //! installs it lives here too (added with `agents install`).
 
+use std::path::Path;
+
+use kprun_core::{KprunError, Result};
+
+pub(crate) const MARKER_START: &str = "<!-- kprun:agent-policy:start -->";
+pub(crate) const MARKER_END: &str = "<!-- kprun:agent-policy:end -->";
+
 /// Fixed v1 template (design spec 2026-07-18, "Canonical policy block").
 /// Exactly one copy in the codebase so tests can assert byte equality.
 /// LF-only: rustc normalizes source CRLF to LF before lexing, and the
@@ -35,9 +42,103 @@ Hard limits:
 <!-- kprun:agent-policy:end -->
 "#;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WriteOutcome {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+/// Create the file with the block, replace an existing marker-delimited
+/// block, or append the block after a blank line — everything outside the
+/// markers stays byte-for-byte untouched. Missing parent directories are
+/// created (plain `std::fs`: these files must be committable, not 0600).
+pub(crate) fn install_block(path: &Path) -> Result<WriteOutcome> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| io_err(path, &e))?;
+                }
+            }
+            std::fs::write(path, POLICY_BLOCK).map_err(|e| io_err(path, &e))?;
+            return Ok(WriteOutcome::Created);
+        }
+        Err(e) => return Err(io_err(path, &e)),
+    };
+    match updated_content(path, &content)? {
+        None => Ok(WriteOutcome::Unchanged),
+        Some(new) => {
+            std::fs::write(path, new).map_err(|e| io_err(path, &e))?;
+            Ok(WriteOutcome::Updated)
+        }
+    }
+}
+
+/// `Some(new_content)` when the file needs rewriting, `None` when it is
+/// already up to date. Errors on corrupted markers — never guess the
+/// replacement range.
+fn updated_content(path: &Path, content: &str) -> Result<Option<String>> {
+    match marker_line_range(content, MARKER_START, 0) {
+        Some((start_begin, start_end)) => {
+            let (_, end_end) =
+                marker_line_range(content, MARKER_END, start_end).ok_or_else(|| corrupted(path))?;
+            let new = format!(
+                "{}{POLICY_BLOCK}{}",
+                &content[..start_begin],
+                &content[end_end..]
+            );
+            Ok((new != content).then_some(new))
+        }
+        None => {
+            if marker_line_range(content, MARKER_END, 0).is_some() {
+                return Err(corrupted(path));
+            }
+            let mut new = String::with_capacity(content.len() + POLICY_BLOCK.len() + 2);
+            new.push_str(content);
+            if !new.is_empty() {
+                if !new.ends_with('\n') {
+                    new.push('\n');
+                }
+                new.push('\n');
+            }
+            new.push_str(POLICY_BLOCK);
+            Ok(Some(new))
+        }
+    }
+}
+
+/// Byte range `(start, end)` of the first line at or after `from` whose
+/// content equals `marker` after `trim_end` (tolerates CRLF and trailing
+/// spaces). `end` includes the line's newline when present.
+fn marker_line_range(content: &str, marker: &str, from: usize) -> Option<(usize, usize)> {
+    let mut offset = from;
+    for line in content[from..].split_inclusive('\n') {
+        if line.trim_end() == marker {
+            return Some((offset, offset + line.len()));
+        }
+        offset += line.len();
+    }
+    None
+}
+
+fn io_err(path: &Path, e: &std::io::Error) -> KprunError {
+    KprunError::Other(format!("{}: {e}", path.display()))
+}
+
+fn corrupted(path: &Path) -> KprunError {
+    KprunError::Other(format!(
+        "{}: corrupted kprun policy markers (start without a matching end below it, \
+         or end without start); restore the missing marker line or delete the block, \
+         then re-run",
+        path.display()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::POLICY_BLOCK;
+    use super::*;
 
     #[test]
     fn block_is_lf_only_and_marker_delimited() {
@@ -58,5 +159,121 @@ mod tests {
         ] {
             assert!(POLICY_BLOCK.contains(needle), "missing: {needle}");
         }
+    }
+
+    #[test]
+    fn creates_missing_file_with_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("deep").join("AGENTS.md");
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Created);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), POLICY_BLOCK);
+    }
+
+    #[test]
+    fn second_install_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        install_block(&path).unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Unchanged);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), POLICY_BLOCK);
+    }
+
+    #[test]
+    fn appends_after_blank_line_when_no_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("CLAUDE.md");
+        std::fs::write(&path, "# Notes\n").unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Updated);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("# Notes\n\n{POLICY_BLOCK}")
+        );
+    }
+
+    #[test]
+    fn append_adds_missing_trailing_newline_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("CLAUDE.md");
+        std::fs::write(&path, "# Notes").unwrap();
+        install_block(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("# Notes\n\n{POLICY_BLOCK}")
+        );
+    }
+
+    #[test]
+    fn empty_existing_file_receives_block_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        std::fs::write(&path, "").unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Updated);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), POLICY_BLOCK);
+    }
+
+    #[test]
+    fn replaces_between_markers_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        let before = format!("intro\n{MARKER_START}\nstale line\n{MARKER_END}\noutro\n");
+        std::fs::write(&path, &before).unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Updated);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("intro\n{POLICY_BLOCK}outro\n")
+        );
+    }
+
+    #[test]
+    fn tolerates_crlf_marker_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        let before = format!("intro\r\n{MARKER_START}\r\nstale\r\n{MARKER_END}\r\n");
+        std::fs::write(&path, &before).unwrap();
+        assert_eq!(install_block(&path).unwrap(), WriteOutcome::Updated);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("intro\r\n{POLICY_BLOCK}")
+        );
+    }
+
+    #[test]
+    fn start_without_end_errors_and_leaves_file_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        let before = format!("{MARKER_START}\nrest of file\n");
+        std::fs::write(&path, &before).unwrap();
+        let err = install_block(&path).unwrap_err().to_string();
+        assert!(err.contains("marker"), "err was: {err}");
+        assert!(err.contains("AGENTS.md"), "err was: {err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn end_without_start_errors_and_leaves_file_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        let before = format!("intro\n{MARKER_END}\n");
+        std::fs::write(&path, &before).unwrap();
+        assert!(install_block(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn end_before_start_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        std::fs::write(&path, format!("{MARKER_END}\n{MARKER_START}\n")).unwrap();
+        assert!(install_block(&path).is_err());
+    }
+
+    #[test]
+    fn io_error_mentions_full_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, "a file, not a directory\n").unwrap();
+        let target = blocker.join("AGENTS.md");
+        let err = install_block(&target).unwrap_err().to_string();
+        assert!(err.contains("AGENTS.md"), "err was: {err}");
     }
 }

@@ -469,4 +469,26 @@ mod tests {
     fn agents_requires_subcommand() {
         assert!(Cli::try_parse_from(["kprun", "agents"]).is_err());
     }
+
+    #[test]
+    fn agents_install_parses_with_defaults() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "install"]).unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { path },
+            } => assert!(path.is_none()),
+            _ => panic!("expected agents install"),
+        }
+    }
+
+    #[test]
+    fn agents_install_accepts_path() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "install", "--path", "sub/dir"]).unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { path },
+            } => assert_eq!(path.as_deref(), Some("sub/dir")),
+            _ => panic!("expected agents install"),
+        }
+    }
 }
