@@ -18,6 +18,7 @@ fn doctor_reports_vault_unlock_and_binary() {
 
     let output = kprun_cmd()
         .envs(test_env(&db))
+        .current_dir(dir.path())
         .args(["doctor"])
         .assert()
         .success()
@@ -33,6 +34,7 @@ fn doctor_reports_vault_unlock_and_binary() {
     assert!(stdout.contains("keystore:"));
     assert!(stdout.contains("keyfile:"));
     assert!(stdout.contains("binary:"));
+    assert!(stdout.contains("agents: not configured (run: kprun agents install)"));
 }
 
 #[test]
@@ -131,4 +133,29 @@ fn doctor_mcp_with_child_command_prints_full_args() {
             "@modelcontextprotocol/server-qdrant"
         ]
     );
+}
+
+#[test]
+fn doctor_reports_agents_policy_installed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    kprun_cmd()
+        .current_dir(dir.path())
+        .args(["agents", "install"])
+        .assert()
+        .success();
+
+    let output = kprun_cmd()
+        .envs(test_env(&db))
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8_lossy(&output);
+    assert!(stdout.contains("agents: policy installed (AGENTS.md)"));
 }

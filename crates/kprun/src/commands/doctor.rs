@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use kprun_core::config::Config;
 use kprun_core::unlock::keystore_has_master;
 use kprun_core::Result;
@@ -5,7 +7,7 @@ use serde_json::json;
 
 use crate::ui;
 
-use super::{run_command, unlock_vault_readonly};
+use super::{agents::policy, run_command, unlock_vault_readonly};
 
 pub fn execute(mcp: Option<String>, command: Vec<String>) -> i32 {
     run_command(|| run(mcp, command))
@@ -62,6 +64,13 @@ fn print_diagnostics() -> Result<()> {
 
     let binary = std::env::current_exe()?;
     println!("binary: {}", binary.display());
+
+    // Read-only marker check in cwd — same helper the installer uses.
+    if policy::has_policy_block(Path::new("AGENTS.md")) {
+        println!("agents: policy installed (AGENTS.md)");
+    } else {
+        println!("agents: not configured (run: kprun agents install)");
+    }
 
     Ok(())
 }

@@ -76,6 +76,19 @@ pub(crate) fn install_block(path: &Path) -> Result<WriteOutcome> {
     }
 }
 
+/// Whether `path` contains a well-formed policy block (start marker with a
+/// matching end marker below it). Read-only — `kprun doctor` uses it for
+/// its `agents:` status line.
+pub(crate) fn has_policy_block(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    match marker_line_range(&content, MARKER_START, 0) {
+        Some((_, start_end)) => marker_line_range(&content, MARKER_END, start_end).is_some(),
+        None => false,
+    }
+}
+
 /// `Some(new_content)` when the file needs rewriting, `None` when it is
 /// already up to date. Errors on corrupted markers — never guess the
 /// replacement range.
@@ -275,5 +288,22 @@ mod tests {
         let target = blocker.join("AGENTS.md");
         let err = install_block(&target).unwrap_err().to_string();
         assert!(err.contains("AGENTS.md"), "err was: {err}");
+    }
+
+    #[test]
+    fn has_policy_block_reports_presence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        assert!(!has_policy_block(&path), "missing file");
+        std::fs::write(&path, "no markers here\n").unwrap();
+        assert!(!has_policy_block(&path), "no markers");
+        std::fs::write(&path, format!("{MARKER_START}\norphan start\n")).unwrap();
+        assert!(
+            !has_policy_block(&path),
+            "corrupted markers are not installed"
+        );
+        std::fs::write(&path, "").unwrap();
+        install_block(&path).unwrap();
+        assert!(has_policy_block(&path));
     }
 }
