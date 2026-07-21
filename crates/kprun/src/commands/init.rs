@@ -17,10 +17,11 @@ const MIN_MASTER_LEN: usize = 12;
 /// Onboarding hints printed after a fresh vault is created. Shared by the
 /// interactive (`create_new`) and `--quick` (`run_quick`) paths so the two
 /// never drift apart. `verify_existing` deliberately shows different hints.
-const POST_INIT_NEXT_STEPS: [&str; 3] = [
+const POST_INIT_NEXT_STEPS: [&str; 4] = [
     "kprun set github GITHUB_TOKEN=ghp_xxx",
     "kprun run github -- npx @modelcontextprotocol/server-github",
     "kprun doctor --mcp github",
+    "kprun agents install   (teach coding agents to use kprun instead of .env)",
 ];
 
 use super::run_command;
@@ -266,5 +267,12 @@ mod tests {
         let msg = keychain_unavailable(KprunError::Other("no secret service".into())).to_string();
         assert!(msg.contains("OS keychain unavailable (no secret service)"));
         assert!(msg.contains("kprun init"));
+    }
+
+    #[test]
+    fn next_steps_include_agents_install_hint() {
+        assert_eq!(POST_INIT_NEXT_STEPS.len(), 4);
+        assert!(POST_INIT_NEXT_STEPS[3].starts_with("kprun agents install"));
+        assert!(POST_INIT_NEXT_STEPS[3].contains(".env"));
     }
 }

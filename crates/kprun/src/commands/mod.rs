@@ -6,6 +6,7 @@ use kprun_core::Result;
 
 use crate::cli::Commands;
 
+pub(crate) mod agents;
 mod deinit;
 mod delete;
 mod doctor;
@@ -93,6 +94,7 @@ pub fn dispatch(command: Commands) {
             full_history,
             json,
         } => std::process::exit(scan::execute(path, history, full_history, json)),
+        Commands::Agents { action } => std::process::exit(agents::execute(action)),
     }
 }
 

@@ -18,6 +18,7 @@ fn doctor_reports_vault_unlock_and_binary() {
 
     let output = kprun_cmd()
         .envs(test_env(&db))
+        .current_dir(dir.path())
         .args(["doctor"])
         .assert()
         .success()
@@ -33,6 +34,7 @@ fn doctor_reports_vault_unlock_and_binary() {
     assert!(stdout.contains("keystore:"));
     assert!(stdout.contains("keyfile:"));
     assert!(stdout.contains("binary:"));
+    assert!(stdout.contains("agents: not configured (run: kprun agents install)"));
 }
 
 #[test]
@@ -130,5 +132,63 @@ fn doctor_mcp_with_child_command_prints_full_args() {
             "-y",
             "@modelcontextprotocol/server-qdrant"
         ]
+    );
+}
+
+#[test]
+fn doctor_reports_agents_policy_installed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    kprun_cmd()
+        .current_dir(dir.path())
+        .args(["agents", "install"])
+        .assert()
+        .success();
+
+    let output = kprun_cmd()
+        .envs(test_env(&db))
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8_lossy(&output);
+    assert!(stdout.contains("agents: policy installed (AGENTS.md, CLAUDE.md)"));
+}
+
+#[test]
+fn doctor_reports_agents_installed_from_claude_md_only() {
+    // Regression guard for the OR check: `agents install` writes both
+    // AGENTS.md and CLAUDE.md, so doctor must recognize either file — a repo
+    // carrying only CLAUDE.md is configured, not "not configured".
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    kprun_cmd()
+        .current_dir(dir.path())
+        .args(["agents", "install"])
+        .assert()
+        .success();
+    // Leave only CLAUDE.md behind.
+    std::fs::remove_file(dir.path().join("AGENTS.md")).unwrap();
+
+    let output = kprun_cmd()
+        .envs(test_env(&db))
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8_lossy(&output);
+    assert!(
+        stdout.contains("agents: policy installed (CLAUDE.md)"),
+        "stdout was: {stdout}"
     );
 }

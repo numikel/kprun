@@ -361,6 +361,44 @@ kprun run openrouter -- junie "Review and fix any code quality issues in the lat
 
 One OpenRouter key can power every tool above; generate it at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
 
+## Agent secrets policy — the AGENTS.md standard
+
+Coding agents (Claude Code, Cursor, Codex, Copilot, Windsurf, OpenCode,
+Antigravity) default to creating `.env` files or asking you to paste secrets
+into chat. `kprun agents` installs a secrets policy into the instruction
+files those tools already read, teaching them to prefer `kprun run` injection
+instead.
+
+kprun supports the open **AGENTS.md** standard as its single source of truth:
+one repo-level `AGENTS.md` covers every tool that reads it natively. Claude
+Code additionally gets a native `CLAUDE.md` containing the same full policy
+block (no import indirection); both files refresh together on every install,
+so they cannot drift. Gemini CLI is deliberately skipped — it is being sunset
+in favor of Antigravity, which reads AGENTS.md.
+
+| Tool | Repo-level | Global (`install -g`) |
+|---|---|---|
+| Claude Code | `CLAUDE.md` | `~/.claude/CLAUDE.md` |
+| Codex | `AGENTS.md` | `~/.codex/AGENTS.md` |
+| Copilot CLI | `AGENTS.md` | `~/.copilot/copilot-instructions.md` (honors `COPILOT_HOME`) |
+| Copilot (VS Code) | `AGENTS.md` | — (global instructions live in VS Code settings) |
+| Cursor | `AGENTS.md` | — (global rules are GUI-only) |
+| Windsurf | `AGENTS.md` | `~/.codeium/windsurf/memories/global_rules.md` |
+| OpenCode | `AGENTS.md` | `~/.config/opencode/AGENTS.md` |
+| Antigravity | `AGENTS.md` | — (reads repo AGENTS.md) |
+
+The policy block sits between `<!-- kprun:agent-policy:start -->` and
+`<!-- kprun:agent-policy:end -->` markers; re-running `install` refreshes only
+that region and never touches surrounding content.
+
+```bash
+kprun agents print                            # canonical block on stdout
+kprun agents install                          # AGENTS.md + CLAUDE.md in the current directory
+kprun agents install --path sub/dir           # another directory
+kprun agents install -g                       # global files of auto-detected agents
+kprun agents install -g --target claude,codex # explicit tools, no detection
+```
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -392,6 +430,7 @@ kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
 kprun scan   [--path DIR] [--history [--full-history]] [--json]
 kprun doctor [--mcp <entry>] [-- <command>...]
 kprun mcp    -e <entry> [--header "Name: template"]... [--bearer FIELD] [--transport auto|streamable-http|sse] [--timeout SECS] [--allow-insecure-http] <url>
+kprun agents print | install [--path <dir>] | install -g [--target <tool>[,<tool>...]]
 kprun reveal-master [--db PATH]
 kprun deinit [--db PATH] [--delete-vault [--yes]]
 ```
@@ -955,6 +994,34 @@ kprun scan --json | jq '.findings'
 # Exit code check for CI gates
 kprun scan --history --json && echo "✓ Clean" || echo "✗ Findings detected"
 ```
+
+### `kprun agents`
+
+Install the kprun secrets policy into coding-agent instruction files.
+
+```bash
+kprun agents print
+kprun agents install [--path <dir>]
+kprun agents install -g [--target <tool>[,<tool>...]]
+```
+
+- `print` — write the canonical policy block to stdout (plain markdown).
+- `install` — create or refresh `AGENTS.md` and `CLAUDE.md` in `--path`
+  (default: current directory). Idempotent: only the content between the
+  `kprun:agent-policy` markers is ever rewritten; a second run reports
+  `unchanged`.
+- `install -g` — write the global instruction files of agents detected by
+  their config directories in `HOME` (`~/.claude`, `~/.codex`,
+  `~/.config/opencode`, `~/.codeium/windsurf`, `~/.copilot` /
+  `COPILOT_HOME`). `--target` skips detection and installs for the named
+  tools, creating missing directories. `--path` and `-g` are mutually
+  exclusive. Accepted targets: `claude`, `codex`, `opencode`, `windsurf`,
+  `copilot`, `cursor` (Cursor prints guidance only — its global rules are
+  GUI-only).
+
+Never touches the vault — no unlock, works without `KPRUN_DB`. Per-file
+results (`created` / `updated` / `unchanged`) go to stderr; exit code is
+non-zero if any file failed.
 
 ### Export and import
 

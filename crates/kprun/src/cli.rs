@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::commands::agents::AgentsAction;
 use crate::mcp_bridge::Transport;
 
 #[derive(Parser)]
@@ -199,6 +200,11 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Install a secrets policy for coding agents (AGENTS.md / CLAUDE.md)
+    Agents {
+        #[command(subcommand)]
+        action: AgentsAction,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -212,6 +218,7 @@ pub enum ExportFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::agents::targets::Target;
     use clap::Parser;
 
     #[test]
@@ -448,5 +455,82 @@ mod tests {
     fn full_history_requires_history() {
         assert!(Cli::try_parse_from(["kprun", "scan", "--full-history"]).is_err());
         assert!(Cli::try_parse_from(["kprun", "scan", "--history", "--full-history"]).is_ok());
+    }
+
+    #[test]
+    fn agents_print_parses() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "print"]).unwrap();
+        match cli.command {
+            Commands::Agents { action } => assert!(matches!(action, AgentsAction::Print)),
+            _ => panic!("expected Commands::Agents"),
+        }
+    }
+
+    #[test]
+    fn agents_requires_subcommand() {
+        assert!(Cli::try_parse_from(["kprun", "agents"]).is_err());
+    }
+
+    #[test]
+    fn agents_install_parses_with_defaults() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "install"]).unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { path, .. },
+            } => assert!(path.is_none()),
+            _ => panic!("expected agents install"),
+        }
+    }
+
+    #[test]
+    fn agents_install_accepts_path() {
+        let cli = Cli::try_parse_from(["kprun", "agents", "install", "--path", "sub/dir"]).unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { path, .. },
+            } => assert_eq!(path.as_deref(), Some("sub/dir")),
+            _ => panic!("expected agents install"),
+        }
+    }
+
+    #[test]
+    fn agents_install_path_conflicts_with_global() {
+        assert!(Cli::try_parse_from(["kprun", "agents", "install", "--path", "x", "-g"]).is_err());
+    }
+
+    #[test]
+    fn agents_install_target_requires_global() {
+        assert!(Cli::try_parse_from(["kprun", "agents", "install", "--target", "claude"]).is_err());
+    }
+
+    #[test]
+    fn agents_install_parses_target_list() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "agents",
+            "install",
+            "-g",
+            "--target",
+            "claude,codex",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Agents {
+                action: AgentsAction::Install { global, target, .. },
+            } => {
+                assert!(global);
+                assert_eq!(target, vec![Target::Claude, Target::Codex]);
+            }
+            _ => panic!("expected agents install"),
+        }
+    }
+
+    #[test]
+    fn agents_install_rejects_unknown_target() {
+        assert!(
+            Cli::try_parse_from(["kprun", "agents", "install", "-g", "--target", "gemini"])
+                .is_err(),
+            "Gemini CLI is deliberately unsupported"
+        );
     }
 }
