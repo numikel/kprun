@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-21
+
+See [docs/changelogs/v0.7.0.md](docs/changelogs/v0.7.0.md) for details.
+
+### Added
+
+- `kprun agents` — secrets policy install for Claude Code agents.
+- `kprun scan` — heuristic committed-secrets checker.
+
+### Changed
+
+- Documentation improvements: problem statement, CLI reference expansion, and comprehensive command documentation.
+- Dependency updates: keepass, clap, which, thiserror, keyring; GitHub Actions.
+
 ## [0.6.2] - 2026-07-17
 
 See [docs/changelogs/v0.6.2.md](docs/changelogs/v0.6.2.md) for details.
