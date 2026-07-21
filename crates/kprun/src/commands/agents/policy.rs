@@ -87,18 +87,37 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(format!(".kprun-tmp-{}", std::process::id()));
     let tmp = std::path::PathBuf::from(tmp);
-    let result = (|| {
+    let result = (|| -> std::io::Result<()> {
         let mut file = std::fs::File::create(&tmp)?;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
         drop(file);
-        std::fs::rename(&tmp, path)
+        std::fs::rename(&tmp, path)?;
+        sync_parent_dir(path);
+        Ok(())
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
     result
 }
+
+/// Best-effort fsync of the file's parent directory so the *rename* is
+/// durable across a power loss, not just the file contents. Unix-only:
+/// fsyncing a directory handle is not portable to Windows. A failure here
+/// never fails the install — the rename already succeeded and the target
+/// already holds the full new content.
+#[cfg(unix)]
+fn sync_parent_dir(path: &Path) {
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let dir = parent.unwrap_or_else(|| Path::new("."));
+    if let Ok(f) = std::fs::File::open(dir) {
+        let _ = f.sync_all();
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent_dir(_path: &Path) {}
 
 /// Whether `path` contains a well-formed policy block (start marker with a
 /// matching end marker below it). Read-only — `kprun doctor` uses it for
@@ -217,6 +236,11 @@ mod tests {
 
     #[test]
     fn leaves_no_temp_siblings_after_create_and_update() {
+        // Guards the observable property: no `.kprun-tmp-*` sibling leaks
+        // after a create or an update. True crash-atomicity of the
+        // temp+rename needs fault injection (a kill mid-write) and is out of
+        // unit-test scope — this does not fail if `write_atomic` regressed to
+        // a plain write, only if a temp file were left behind.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("AGENTS.md");
         assert_eq!(install_block(&path).unwrap(), WriteOutcome::Created);

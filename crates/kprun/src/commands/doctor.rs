@@ -66,10 +66,16 @@ fn print_diagnostics() -> Result<()> {
     println!("binary: {}", binary.display());
 
     // Read-only marker check in cwd — same helper the installer uses.
-    if policy::has_policy_block(Path::new("AGENTS.md")) {
-        println!("agents: policy installed (AGENTS.md)");
-    } else {
+    // `agents install` writes both AGENTS.md and CLAUDE.md, so either file
+    // carrying the block counts as configured; report which ones do.
+    let installed: Vec<&str> = ["AGENTS.md", "CLAUDE.md"]
+        .into_iter()
+        .filter(|name| policy::has_policy_block(Path::new(name)))
+        .collect();
+    if installed.is_empty() {
         println!("agents: not configured (run: kprun agents install)");
+    } else {
+        println!("agents: policy installed ({})", installed.join(", "));
     }
 
     Ok(())

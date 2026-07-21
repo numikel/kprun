@@ -52,8 +52,19 @@ pub(crate) fn execute(action: AgentsAction) -> i32 {
 
 fn print() -> Result<()> {
     // Plain markdown on stdout, no decoration: stdout = machine data.
-    print!("{}", policy::POLICY_BLOCK);
-    Ok(())
+    // Write directly instead of `print!`: a closed reader (`agents print |
+    // head`) then yields a handled error rather than the panic the print
+    // macros raise on a failed stdout write. A broken pipe is a clean exit.
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    match out
+        .write_all(policy::POLICY_BLOCK.as_bytes())
+        .and_then(|()| out.flush())
+    {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(kprun_core::KprunError::Io(e)),
+    }
 }
 
 /// Repo-level install: `AGENTS.md` for every tool reading the open

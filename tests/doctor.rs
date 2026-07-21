@@ -157,5 +157,38 @@ fn doctor_reports_agents_policy_installed() {
         .stdout
         .clone();
     let stdout = String::from_utf8_lossy(&output);
-    assert!(stdout.contains("agents: policy installed (AGENTS.md)"));
+    assert!(stdout.contains("agents: policy installed (AGENTS.md, CLAUDE.md)"));
+}
+
+#[test]
+fn doctor_reports_agents_installed_from_claude_md_only() {
+    // Regression guard for the OR check: `agents install` writes both
+    // AGENTS.md and CLAUDE.md, so doctor must recognize either file — a repo
+    // carrying only CLAUDE.md is configured, not "not configured".
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    kprun_cmd()
+        .current_dir(dir.path())
+        .args(["agents", "install"])
+        .assert()
+        .success();
+    // Leave only CLAUDE.md behind.
+    std::fs::remove_file(dir.path().join("AGENTS.md")).unwrap();
+
+    let output = kprun_cmd()
+        .envs(test_env(&db))
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8_lossy(&output);
+    assert!(
+        stdout.contains("agents: policy installed (CLAUDE.md)"),
+        "stdout was: {stdout}"
+    );
 }
