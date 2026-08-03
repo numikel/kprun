@@ -286,6 +286,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+
+[[package]]
 name = "bitflags"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,12 +1006,12 @@ dependencies = [
 
 [[package]]
 name = "keepass"
-version = "0.13.17"
+version = "0.13.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2765eb6c9966956f5b421f44657140856accd7a769151dd47811d81ff2d8e8df"
+checksum = "e8014931bc1d5d427563b2c75e7b240a92353463e89cb2b4e21c98fb776c1c28"
 dependencies = [
  "aes 0.9.1",
- "base64",
+ "base64 0.23.0",
  "block-modes",
  "byteorder",
  "cbc 0.2.1",
@@ -1055,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "kprun"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1072,7 +1078,7 @@ dependencies = [
 
 [[package]]
 name = "kprun-core"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "keepass",
@@ -1435,7 +1441,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ae76b7506744d254fd0eb2c0ff5c5d108201ccbb083111ac04a44eeda105680"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "blake2b_simd",
  "constant_time_eq",
  "crossbeam-utils",
@@ -1838,7 +1844,7 @@ version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "flate2",
  "log",
  "percent-encoding",
@@ -1855,7 +1861,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e994ba84b0bd1b1b0cf92878b7ef898a5c1760108fe7b6010327e274917a808c"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "http",
  "httparse",
  "log",
