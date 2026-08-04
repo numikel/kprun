@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-08-04
+
+See [docs/changelogs/v0.7.1.md](docs/changelogs/v0.7.1.md) for details.
+
+### Changed
+
+- Empty custom-field values now persist through save→reload (keepass-rs).
+- Dependency updates: keepass, clap, serde_json; GitHub Actions.
+
 ## [0.7.0] - 2026-07-21
 
 See [docs/changelogs/v0.7.0.md](docs/changelogs/v0.7.0.md) for details.
