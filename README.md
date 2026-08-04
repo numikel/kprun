@@ -459,7 +459,7 @@ kprun init [--db PATH] [--no-store] [--keyfile PATH] [--quick [--force]]
 
 **Limitations**:
 - The vault file is stored as plaintext on disk (encrypted inside the `.kdbx` format). If the vault is compromised, all secrets are at risk.
-- Empty custom-field values cannot be stored — the KDBX backend drops them on save.
+- `kprun migrate` skips empty or whitespace-only values (stderr warning). `kprun set` / `import` can store empty strings (keepass-rs 0.13.19+).
 - After updating from v0.4.x to v0.5.0+, the keychain account name changed (lexical path → SHA-256). Re-run `kprun init --quick` on temporary vaults to update the keychain entry.
 
 **Examples**:
@@ -618,7 +618,7 @@ kprun set <entry> KEY=val [KEY2=val2 ...] | --stdin
 - `--stdin` — Read `KEY=value` lines from stdin instead of argv. Blank lines and `#` comment lines are skipped. **Avoids exposing secrets in shell history or process listings.** Incompatible with positional arguments.
 
 **Limitations**:
-- Empty or whitespace-only values are silently dropped by the KDBX backend and cannot be stored.
+- Empty string values are stored (keepass-rs 0.13.19+). Prefer non-empty secrets; use `--stdin` for sensitive values.
 - Inline `kprun set` commands expose secrets to shell history and `ps` output during execution — prefer `--stdin` for sensitive values.
 - Exit code `1` if the vault cannot be opened or unlocked.
 

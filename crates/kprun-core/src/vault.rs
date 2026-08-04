@@ -468,6 +468,37 @@ mod tests {
         );
     }
 
+    /// Documents keepass-rs empty-field round-trip after 0.13.19+
+    /// (sseemayer/keepass-rs#365). Update CLAUDE.md/README if this flips.
+    #[test]
+    fn set_attributes_empty_value_round_trip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("empty.kdbx");
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
+        create_vault(&path, key.clone(), "kprun").unwrap();
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault
+            .set_attributes("svc", &[("EMPTY_KEY".into(), "".into())])
+            .unwrap();
+        vault.save(key.clone()).unwrap();
+
+        let vault2 = open_vault(&path, key, OpenMode::ReadOnly).unwrap();
+        let id = vault2.find_entry_by_title("svc").unwrap();
+        let vals = vault2.entry_custom_values(id);
+        // keepass-rs 0.13.19+ (sseemayer/keepass-rs#365) preserves empty fields
+        // through save→reload. migrate still skips empties at the CLI layer.
+        assert_eq!(
+            vals.get("EMPTY_KEY").map(String::as_str),
+            Some(""),
+            "empty custom fields must persist on save→reload; got {vals:?}"
+        );
+    }
+
     #[test]
     fn set_attributes_stores_protected_values() {
         let dir = tempdir().unwrap();
