@@ -121,3 +121,86 @@ fn quick_force_without_tty_errors_and_preserves_vault() {
 
     assert_eq!(std::fs::read(&db).unwrap(), before);
 }
+
+// --- Real OS keychain unavailable (keyring crate contract) -------------------
+//
+// These tests exercise the real `keyring` backend — no KPRUN_TEST_KEYSTORE
+// seam, no KPRUN_TEST_MASTER bypass. They run on Linux only, with the D-Bus
+// session address pointed at a socket that does not exist, so the
+// secret-service backend fails deterministically and nothing ever touches a
+// developer's real keychain.
+
+#[cfg(target_os = "linux")]
+mod keychain_unavailable {
+    use super::common::{create_vault_with_entries, kprun_cmd};
+    use std::path::Path;
+
+    fn no_keychain_env(db: &Path, dir: &Path) -> [(&'static str, String); 2] {
+        [
+            ("KPRUN_DB", db.to_str().unwrap().to_string()),
+            (
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}", dir.join("no-such-bus").display()),
+            ),
+        ]
+    }
+
+    /// Cause reported by the keyring backend when no secret service is reachable.
+    const BACKEND_CAUSE: &str =
+        "Platform failure: no secret service provider or dbus session found";
+
+    #[test]
+    fn quick_init_reports_keychain_cause_and_creates_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("secrets.kdbx");
+
+        kprun_cmd()
+            .envs(no_keychain_env(&db, dir.path()))
+            .args(["init", "--quick"])
+            .assert()
+            .code(1)
+            .stdout("")
+            .stderr(format!(
+                "Checking OS keychain availability\n\
+                 error: OS keychain unavailable ({BACKEND_CAUSE}). \
+                 Run 'kprun init' to choose a password interactively.\n"
+            ));
+        assert!(!db.exists(), "no vault may be created without a keychain");
+    }
+
+    #[test]
+    fn reveal_master_reports_keychain_cause_with_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("secrets.kdbx");
+        create_vault_with_entries(&db, &[("demo", &[("K", "v")])]);
+
+        kprun_cmd()
+            .envs(no_keychain_env(&db, dir.path()))
+            .args(["reveal-master"])
+            .assert()
+            .code(1)
+            .stdout("")
+            .stderr(format!(
+                "error: OS keychain unavailable while reading the stored master password \
+                 ({BACKEND_CAUSE}). On headless Linux start/unlock a secret-service store; \
+                 on macOS approve the keychain access prompt. Vault: {}\n",
+                db.display()
+            ));
+    }
+
+    #[test]
+    fn deinit_reports_keychain_cause() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("secrets.kdbx");
+        create_vault_with_entries(&db, &[("demo", &[("K", "v")])]);
+
+        kprun_cmd()
+            .envs(no_keychain_env(&db, dir.path()))
+            .args(["deinit"])
+            .assert()
+            .code(1)
+            .stdout("")
+            .stderr(format!("error: {BACKEND_CAUSE}\n"));
+        assert!(db.exists(), "deinit without --delete-vault keeps the vault");
+    }
+}
