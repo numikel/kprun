@@ -6,6 +6,9 @@ target-*/
 
 # Secrets and cryptography
 **/*.kdbx
+# Exception: golden test vault written by an older kprun (no real secrets;
+# test master password), used to catch KDBX regressions across keepass bumps.
+!tests/fixtures/golden/*.kdbx
 **/*.keyfile
 kprun-release.key
 kprun-release.pub

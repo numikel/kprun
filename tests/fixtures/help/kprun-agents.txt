@@ -1,0 +1,11 @@
+Install a secrets policy for coding agents (AGENTS.md / CLAUDE.md)
+
+Usage: kprun agents <COMMAND>
+
+Commands:
+  print    Print the canonical policy block to stdout
+  install  Install the policy block into agent instruction files
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help

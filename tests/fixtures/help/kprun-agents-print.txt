@@ -1,0 +1,6 @@
+Print the canonical policy block to stdout
+
+Usage: kprun agents print
+
+Options:
+  -h, --help  Print help

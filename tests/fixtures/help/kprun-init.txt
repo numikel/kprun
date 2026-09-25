@@ -1,0 +1,11 @@
+Create or attach a KeePass vault and unlock it
+
+Usage: kprun init [OPTIONS]
+
+Options:
+      --db <DB>            Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+      --no-store           Do not store the master password in the OS keychain
+      --keyfile <KEYFILE>  Path to a key file; created if missing (default: KPRUN_KEYFILE)
+      --quick              Non-interactive setup: generate a master password, create the vault, store it in the OS keychain, print it once
+      --force              Overwrite an existing vault (asks for confirmation)
+  -h, --help               Print help

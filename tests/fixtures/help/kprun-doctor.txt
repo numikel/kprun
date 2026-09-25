@@ -1,0 +1,10 @@
+Diagnose configuration and print an MCP config snippet
+
+Usage: kprun doctor [OPTIONS] [COMMAND]...
+
+Arguments:
+  [COMMAND]...  MCP server command to append after `run <entry> --` (place after `--` on the CLI)
+
+Options:
+      --mcp <MCP>  Print an MCP config JSON snippet for this vault entry instead of diagnostics
+  -h, --help       Print help

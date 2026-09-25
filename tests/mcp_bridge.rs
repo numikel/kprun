@@ -1112,3 +1112,334 @@ fn http_remote_without_secrets_is_not_refused() {
         "secretless http was wrongly refused: {stderr}"
     );
 }
+
+// --- HTTP client (ureq) contract ---------------------------------------------
+//
+// Transport-level behavior the bridge relies on from its HTTP client:
+// fallback status handling, chunked SSE bodies, header timeouts on both
+// transports, and HTTP/1.1 keep-alive connection reuse.
+
+const PING: &str = r#"{"jsonrpc":"2.0","id":3,"method":"ping"}"#;
+const PING_RESULT: &str = r#"{"jsonrpc":"2.0","id":3,"result":{}}"#;
+
+fn mcp_args<'a>(url: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["mcp", "-e", "github", "--bearer", "TOKEN"];
+    args.extend_from_slice(extra);
+    args.push(url);
+    args
+}
+
+#[test]
+fn legacy_fallback_on_404_bridges_via_sse() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        match (req.method.as_str(), req.path.as_str()) {
+            // Streamable probe: old server answers 404 → fallback.
+            ("POST", "/sse") => MockResponse::Empty { status: 404, headers: vec![] },
+            ("GET", "/sse") => MockResponse::Sse {
+                status: 200,
+                payload: format!(
+                    "event: endpoint\ndata: /messages?sid=legacy-404\n\nevent: message\ndata: {INIT_RESULT}\n\nevent: message\ndata: {LIST_RESULT}\n\n"
+                ),
+            },
+            ("POST", "/messages?sid=legacy-404") => {
+                MockResponse::Empty { status: 202, headers: vec![] }
+            }
+            _ => MockResponse::Empty { status: 500, headers: vec![] },
+        }
+    });
+
+    let url = server.url("/sse");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(
+        stdout.lines().collect::<Vec<_>>(),
+        vec![INIT_RESULT, LIST_RESULT]
+    );
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(stderr.contains("deprecated"), "{stderr}");
+
+    let requests = server.requests.lock().unwrap();
+    let legacy_posts: Vec<_> = requests
+        .iter()
+        .filter(|r| r.path == "/messages?sid=legacy-404")
+        .collect();
+    assert_eq!(legacy_posts.len(), 2);
+    assert_eq!(legacy_posts[1].body, LIST);
+}
+
+#[test]
+fn server_error_503_on_initialize_never_falls_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|_| MockResponse::Empty {
+        status: 503,
+        headers: vec![],
+    });
+
+    let url = server.url("/mcp/");
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n"))
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("initialize failed: HTTP 503"));
+
+    let requests = server.requests.lock().unwrap();
+    assert!(requests.iter().all(|r| r.method == "POST"));
+    assert_eq!(requests.len(), 1); // no GET probe, no retry
+}
+
+#[test]
+fn chunked_sse_response_split_mid_event_is_reassembled() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    const PROGRESS: &str = r#"{"jsonrpc":"2.0","method":"notifications/progress"}"#;
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            // HTTP chunk boundaries deliberately split field names, JSON
+            // payloads and the blank-line event terminator.
+            let (p1, p2) = PROGRESS.split_at(17);
+            let (l1, l2) = LIST_RESULT.split_at(9);
+            MockResponse::SseChunked {
+                status: 200,
+                chunks: vec![
+                    "event: mess".into(),
+                    format!("age\ndata: {p1}"),
+                    format!("{p2}\n"),
+                    format!("\nevent: message\ndata: {l1}"),
+                    format!("{l2}\n\n"),
+                ],
+            }
+        }
+    });
+
+    let url = server.url("/mcp/");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(
+        stdout.lines().collect::<Vec<_>>(),
+        vec![INIT_RESULT, PROGRESS, LIST_RESULT]
+    );
+}
+
+#[test]
+fn slow_response_headers_hit_timeout_and_bridge_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else if req.body.contains("tools/list") {
+            MockResponse::Delayed {
+                delay: std::time::Duration::from_secs(3),
+                then: Box::new(MockResponse::Json {
+                    status: 200,
+                    headers: vec![],
+                    body: LIST_RESULT.into(),
+                }),
+            }
+        } else {
+            MockResponse::Json {
+                status: 200,
+                headers: vec![],
+                body: PING_RESULT.into(),
+            }
+        }
+    });
+
+    let url = server.url("/mcp/");
+    let started = std::time::Instant::now();
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &["--timeout", "1"]))
+        .write_stdin(format!("{INIT}\n{LIST}\n{PING}\n"))
+        .assert()
+        .success();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(3),
+        "bridge waited for the slow response instead of timing out"
+    );
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert_eq!(lines[0], INIT_RESULT);
+    let error_frame: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(error_frame["id"], 2);
+    assert_eq!(error_frame["error"]["code"], -32603);
+    assert_eq!(lines[2], PING_RESULT);
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert!(stderr.contains("no response headers within"), "{stderr}");
+}
+
+#[test]
+fn legacy_post_timeout_emits_error_and_bridge_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        match (req.method.as_str(), req.path.as_str()) {
+            ("GET", "/sse") => MockResponse::SseDelayed {
+                status: 200,
+                chunks: vec![
+                    (
+                        std::time::Duration::ZERO,
+                        format!(
+                            "event: endpoint\ndata: /messages?sid=slow\n\nevent: message\ndata: {INIT_RESULT}\n\n"
+                        ),
+                    ),
+                    (
+                        std::time::Duration::from_millis(1800),
+                        format!("event: message\ndata: {PING_RESULT}\n\n"),
+                    ),
+                ],
+            },
+            ("POST", "/messages?sid=slow") if req.body.contains("tools/list") => {
+                MockResponse::Delayed {
+                    delay: std::time::Duration::from_secs(3),
+                    then: Box::new(MockResponse::Empty { status: 202, headers: vec![] }),
+                }
+            }
+            ("POST", "/messages?sid=slow") => {
+                MockResponse::Empty { status: 202, headers: vec![] }
+            }
+            _ => MockResponse::Empty { status: 500, headers: vec![] },
+        }
+    });
+
+    let url = server.url("/sse");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &["--transport", "sse", "--timeout", "1"]))
+        .write_stdin(format!("{INIT}\n{LIST}\n{PING}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(lines.contains(&INIT_RESULT), "{stdout}");
+    assert!(lines.contains(&PING_RESULT), "{stdout}");
+    let errors: Vec<serde_json::Value> = lines
+        .iter()
+        .filter(|l| l.contains("\"error\""))
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(errors.len(), 1, "{stdout}");
+    assert_eq!(errors[0]["id"], 2);
+    assert_eq!(errors[0]["error"]["code"], -32603);
+
+    let requests = server.requests.lock().unwrap();
+    let posts: Vec<_> = requests
+        .iter()
+        .filter(|r| r.path == "/messages?sid=slow")
+        .collect();
+    assert_eq!(
+        posts.len(),
+        3,
+        "every frame is POSTed, including after the timeout"
+    );
+}
+
+#[test]
+fn keep_alive_server_session_reuses_pooled_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start_keep_alive(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            let id = serde_json::from_str::<serde_json::Value>(&req.body).unwrap()["id"].clone();
+            MockResponse::Json {
+                status: 200,
+                headers: vec![],
+                body: format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{}}}}"#),
+            }
+        }
+    });
+
+    let frames: Vec<String> = (10..16)
+        .map(|id| format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"ping"}}"#))
+        .collect();
+    let url = server.url("/mcp/");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{}\n", frames.join("\n")))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let expected: Vec<String> = std::iter::once(INIT_RESULT.to_string())
+        .chain((10..16).map(|id| format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{}}}}"#)))
+        .collect();
+    assert_eq!(stdout.lines().collect::<Vec<_>>(), expected);
+
+    let requests = server.requests.lock().unwrap();
+    let posts = requests.iter().filter(|r| r.method == "POST").count();
+    assert_eq!(posts, 7);
+    // Every POST carries the session and auth headers, pooled or not.
+    for r in requests.iter().filter(|r| r.method == "POST").skip(1) {
+        assert_eq!(
+            r.headers.get("mcp-session-id").map(String::as_str),
+            Some("sess-1")
+        );
+        assert_eq!(
+            r.headers.get("authorization").map(String::as_str),
+            Some("Bearer github_pat_test")
+        );
+    }
+    assert!(
+        server.connection_count() < requests.len(),
+        "expected keep-alive reuse: {} connections for {} requests",
+        server.connection_count(),
+        requests.len()
+    );
+}

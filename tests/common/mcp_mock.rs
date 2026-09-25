@@ -1,12 +1,16 @@
 //! Minimal scriptable HTTP server for MCP bridge integration tests.
 //!
-//! Every response carries `Connection: close` — ureq pools keep-alive
-//! connections, and this server handles exactly one request per connection.
+//! By default every response carries `Connection: close` and the server
+//! handles exactly one request per connection. `MockServer::start_keep_alive`
+//! instead serves `Json`/`Empty` responses with `Connection: keep-alive` and
+//! keeps reading requests from the same connection, so ureq's connection
+//! pool is exercised the way a real server would.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -43,19 +47,51 @@ pub enum MockResponse {
         status: u16,
         headers: Vec<(String, String)>,
     },
+    /// Sleeps for `delay` before writing anything (no status line, no
+    /// headers), then sends `then`. Exercises header timeouts.
+    Delayed {
+        delay: std::time::Duration,
+        then: Box<MockResponse>,
+    },
+    /// `text/event-stream` body using `Transfer-Encoding: chunked`, one HTTP
+    /// chunk per element (chunk boundaries may split SSE lines/events).
+    SseChunked { status: u16, chunks: Vec<String> },
 }
 
 pub struct MockServer {
     addr: SocketAddr,
     pub requests: Arc<Mutex<Vec<MockRequest>>>,
+    /// Number of TCP connections accepted so far.
+    pub connections: Arc<AtomicUsize>,
 }
 
 impl MockServer {
     pub fn start(handler: impl Fn(&MockRequest) -> MockResponse + Send + Sync + 'static) -> Self {
+        Self::start_inner(handler, false)
+    }
+
+    /// Like `start`, but `Json`/`Empty` responses keep the connection open
+    /// for further requests (HTTP/1.1 keep-alive).
+    pub fn start_keep_alive(
+        handler: impl Fn(&MockRequest) -> MockResponse + Send + Sync + 'static,
+    ) -> Self {
+        Self::start_inner(handler, true)
+    }
+
+    pub fn connection_count(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
+    }
+
+    fn start_inner(
+        handler: impl Fn(&MockRequest) -> MockResponse + Send + Sync + 'static,
+        keep_alive: bool,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let requests: Arc<Mutex<Vec<MockRequest>>> = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = connections.clone();
         let handler = Arc::new(handler);
         thread::spawn(move || {
             for stream in listener.incoming() {
@@ -76,12 +112,17 @@ impl MockServer {
                     }
                     Err(_) => break,
                 };
+                accepted.fetch_add(1, Ordering::SeqCst);
                 let recorded = recorded.clone();
                 let handler = handler.clone();
-                thread::spawn(move || handle_connection(stream, recorded, handler));
+                thread::spawn(move || handle_connection(stream, recorded, handler, keep_alive));
             }
         });
-        MockServer { addr, requests }
+        MockServer {
+            addr,
+            requests,
+            connections,
+        }
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -95,13 +136,30 @@ fn handle_connection(
     mut stream: TcpStream,
     recorded: Arc<Mutex<Vec<MockRequest>>>,
     handler: Arc<Handler>,
+    keep_alive: bool,
 ) {
-    let Some(request) = read_request(&stream) else {
+    let Ok(read_half) = stream.try_clone() else {
         return;
     };
-    let response = handler(&request);
-    recorded.lock().unwrap().push(request);
-    write_response(&mut stream, response);
+    // One reader per connection: with keep-alive, bytes of the next request
+    // may already sit in its buffer.
+    let mut reader = BufReader::new(read_half);
+    loop {
+        let Some(request) = read_request(&mut reader) else {
+            return;
+        };
+        let response = handler(&request);
+        recorded.lock().unwrap().push(request);
+        let reusable = keep_alive
+            && matches!(
+                response,
+                MockResponse::Json { .. } | MockResponse::Empty { .. }
+            );
+        write_response(&mut stream, response, reusable);
+        if !reusable {
+            return;
+        }
+    }
 }
 
 /// Reads one line. A reset/aborted connection — the client closing
@@ -113,10 +171,9 @@ fn read_line_or_eof(reader: &mut BufReader<TcpStream>, buf: &mut String) -> Opti
     reader.read_line(buf).ok()
 }
 
-fn read_request(stream: &TcpStream) -> Option<MockRequest> {
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
+fn read_request(reader: &mut BufReader<TcpStream>) -> Option<MockRequest> {
     let mut request_line = String::new();
-    if read_line_or_eof(&mut reader, &mut request_line)? == 0 {
+    if read_line_or_eof(reader, &mut request_line)? == 0 {
         return None;
     }
     let mut parts = request_line.split_whitespace();
@@ -125,7 +182,7 @@ fn read_request(stream: &TcpStream) -> Option<MockRequest> {
     let mut headers = HashMap::new();
     loop {
         let mut line = String::new();
-        if read_line_or_eof(&mut reader, &mut line)? == 0 {
+        if read_line_or_eof(reader, &mut line)? == 0 {
             return None;
         }
         let line = line.trim_end();
@@ -155,7 +212,8 @@ fn read_request(stream: &TcpStream) -> Option<MockRequest> {
     })
 }
 
-fn write_response(stream: &mut TcpStream, response: MockResponse) {
+fn write_response(stream: &mut TcpStream, response: MockResponse, keep_alive: bool) {
+    let connection = if keep_alive { "keep-alive" } else { "close" };
     match response {
         MockResponse::Json {
             status,
@@ -163,7 +221,7 @@ fn write_response(stream: &mut TcpStream, response: MockResponse) {
             body,
         } => {
             let mut head = format!(
-                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: {connection}\r\n",
                 body.len()
             );
             for (name, value) in headers {
@@ -206,12 +264,28 @@ fn write_response(stream: &mut TcpStream, response: MockResponse) {
         }
         MockResponse::Empty { status, headers } => {
             let mut head =
-                format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n");
+                format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: {connection}\r\n");
             for (name, value) in headers {
                 head.push_str(&format!("{name}: {value}\r\n"));
             }
             head.push_str("\r\n");
             let _ = stream.write_all(head.as_bytes());
+        }
+        MockResponse::Delayed { delay, then } => {
+            thread::sleep(delay);
+            write_response(stream, *then, false);
+        }
+        MockResponse::SseChunked { status, chunks } => {
+            let head = format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.flush();
+            for chunk in chunks {
+                let _ = write!(stream, "{:x}\r\n{chunk}\r\n", chunk.len());
+                let _ = stream.flush();
+            }
+            let _ = stream.write_all(b"0\r\n\r\n");
         }
     }
     let _ = stream.flush();

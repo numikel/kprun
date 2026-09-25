@@ -1,0 +1,11 @@
+Inject vault secrets into a child process
+
+Usage: kprun run [OPTIONS] <ENTRIES>... <COMMAND>...
+
+Arguments:
+  <ENTRIES>...  Vault entry titles whose secrets to inject
+  <COMMAND>...  Command to run after `--` (receives injected environment variables)
+
+Options:
+      --clean-env  Inject only vault secrets and a minimal safe environment, dropping the parent environment
+  -h, --help       Print help

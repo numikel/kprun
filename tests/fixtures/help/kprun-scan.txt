@@ -1,0 +1,10 @@
+Fast heuristic check for committed secrets. Not a substitute for dedicated scanners like gitleaks or trufflehog
+
+Usage: kprun scan [OPTIONS]
+
+Options:
+      --path <PATH>   Directory inside the git repository to scan (default: current directory)
+      --history       Additionally scan git history (git log -p, last 500 commits)
+      --full-history  Scan the entire history without the 500-commit limit
+      --json          Print findings as one compact JSON document on stdout
+  -h, --help          Print help

@@ -1,0 +1,7 @@
+List vault entries and their secret key names
+
+Usage: kprun list [OPTIONS]
+
+Options:
+      --json  Output entry titles and key names as JSON
+  -h, --help  Print help

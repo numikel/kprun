@@ -1,0 +1,25 @@
+Export vault entries to JSON or dotenv
+
+Usage: kprun export [OPTIONS]
+
+Options:
+      --format <FORMAT>
+          Output format: JSON structure or kprun dotenv blocks
+
+          Possible values:
+          - json:   JSON object with an `entries` array
+          - dotenv: kprun dotenv blocks (`# entry` headers and KEY=value lines)
+          
+          [default: json]
+
+      --stdout
+          Write export to stdout instead of a file (skips banner; suitable for piping)
+
+      --reveal
+          Include secret values in the export (default: key names only)
+
+      --output <OUTPUT>
+          Write to this path instead of the default kprun-export.* in the current directory
+
+  -h, --help
+          Print help (see a summary with '-h')

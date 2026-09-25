@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-09-25
+
+See [docs/changelogs/v0.7.2.md](docs/changelogs/v0.7.2.md) for details.
+
+### Changed
+
+- Dependency updates: keepass, ureq, clap, thiserror; GitHub Actions.
+- Regression tests pinning user-visible behavior across dependency bumps.
+
+### Security
+
+- rustls 0.23.45 (RUSTSEC-2026-0285).
+
 ## [0.7.1] - 2026-08-04
 
 See [docs/changelogs/v0.7.1.md](docs/changelogs/v0.7.1.md) for details.

@@ -1,0 +1,10 @@
+Import entries from JSON or dotenv into the vault
+
+Usage: kprun import [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  JSON or kprun dotenv file to import
+
+Options:
+      --merge  Add or update imported entries without deleting others in the vault
+  -h, --help   Print help
