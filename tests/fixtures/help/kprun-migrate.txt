@@ -1,0 +1,13 @@
+Migrate a plaintext project .env file into the vault
+
+Usage: kprun migrate [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  Path to a standard .env file (KEY=value lines)
+
+Options:
+      --entry <ENTRY>  Vault entry title (default: name of the directory containing the file)
+      --merge          Merge keys into an existing entry with this title
+      --gitignore      Add the file's name to .gitignore without asking
+      --delete         Delete the source file after a successful import
+  -h, --help           Print help

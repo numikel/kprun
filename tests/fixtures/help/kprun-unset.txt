@@ -1,0 +1,10 @@
+Remove secret fields from a vault entry
+
+Usage: kprun unset <ENTRY> [KEYS]...
+
+Arguments:
+  <ENTRY>    Vault entry title
+  [KEYS]...  Custom field names to remove
+
+Options:
+  -h, --help  Print help

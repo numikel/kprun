@@ -1,0 +1,9 @@
+Remove the stored master password for the current vault from the OS keychain
+
+Usage: kprun deinit [OPTIONS]
+
+Options:
+      --db <DB>       Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+      --delete-vault  Also delete the vault file itself (asks for confirmation)
+      --yes           Skip the confirmation prompt
+  -h, --help          Print help

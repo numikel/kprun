@@ -1,0 +1,11 @@
+Set or update secret fields on a vault entry
+
+Usage: kprun set [OPTIONS] <ENTRY> [PAIRS]...
+
+Arguments:
+  <ENTRY>     Vault entry title (created if missing)
+  [PAIRS]...  KEY=value pairs to set on the entry
+
+Options:
+      --stdin  Read KEY=value lines from stdin (avoids argv / shell-history exposure)
+  -h, --help   Print help

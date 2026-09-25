@@ -1,0 +1,26 @@
+Inject KeePass secrets into a child process
+
+Usage: kprun <COMMAND>
+
+Commands:
+  init           Create or attach a KeePass vault and unlock it
+  run            Inject vault secrets into a child process
+  list           List vault entries and their secret key names
+  get            Show custom fields for a vault entry
+  set            Set or update secret fields on a vault entry
+  unset          Remove secret fields from a vault entry
+  delete         Delete a vault entry
+  export         Export vault entries to JSON or dotenv
+  import         Import entries from JSON or dotenv into the vault
+  migrate        Migrate a plaintext project .env file into the vault
+  doctor         Diagnose configuration and print an MCP config snippet
+  mcp            Bridge stdio JSON-RPC to a remote HTTP MCP server, injecting vault-backed auth headers
+  reveal-master  Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
+  deinit         Remove the stored master password for the current vault from the OS keychain
+  scan           Fast heuristic check for committed secrets. Not a substitute for dedicated scanners like gitleaks or trufflehog
+  agents         Install a secrets policy for coding agents (AGENTS.md / CLAUDE.md)
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

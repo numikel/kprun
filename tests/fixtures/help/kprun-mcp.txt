@@ -1,0 +1,38 @@
+Bridge stdio JSON-RPC to a remote HTTP MCP server, injecting vault-backed auth headers
+
+Usage: kprun mcp [OPTIONS] --entry <ENTRY> <URL>
+
+Arguments:
+  <URL>
+          Remote MCP endpoint URL (supports {{FIELD}} substitution)
+
+Options:
+  -e, --entry <ENTRY>
+          Vault entry whose custom fields fill {{FIELD}} templates
+
+      --header <HEADERS>
+          Extra header as 'Name: template' with {{FIELD}} substitution (repeatable)
+
+      --bearer <FIELD>
+          Shorthand for --header "Authorization: Bearer {{FIELD}}"
+
+      --transport <TRANSPORT>
+          Remote transport (auto follows MCP spec backwards-compatibility detection)
+
+          Possible values:
+          - auto:            Detect per MCP spec: try Streamable HTTP, fall back to HTTP+SSE
+          - streamable-http: Streamable HTTP (2025-03-26+) only
+          - sse:             Deprecated HTTP+SSE (2024-11-05) only
+          
+          [default: auto]
+
+      --timeout <TIMEOUT>
+          Timeout in seconds for connect and response headers (response bodies and SSE streams are exempt)
+          
+          [default: 30]
+
+      --allow-insecure-http
+          Allow vault-backed credentials over plaintext http:// to a non-loopback host
+
+  -h, --help
+          Print help (see a summary with '-h')

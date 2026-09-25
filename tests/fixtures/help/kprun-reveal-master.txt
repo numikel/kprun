@@ -1,0 +1,7 @@
+Print the master password stored in the OS keychain for the current vault (stderr warning + audit)
+
+Usage: kprun reveal-master [OPTIONS]
+
+Options:
+      --db <DB>  Path to the KeePass database (default: KPRUN_DB or ~/.kprun/secrets.kdbx)
+  -h, --help     Print help

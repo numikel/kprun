@@ -1,0 +1,11 @@
+Show custom fields for a vault entry
+
+Usage: kprun get [OPTIONS] <ENTRY>
+
+Arguments:
+  <ENTRY>  Vault entry title
+
+Options:
+      --keys    Print only key names, one per line
+      --reveal  Print KEY=value lines including secret values (stderr warning and audit log)
+  -h, --help    Print help

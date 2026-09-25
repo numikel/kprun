@@ -1,0 +1,9 @@
+Install the policy block into agent instruction files
+
+Usage: kprun agents install [OPTIONS]
+
+Options:
+      --path <PATH>      Target directory for repo-level install (default: current directory)
+  -g, --global           Write the global instruction files of installed agents instead of repo files
+      --target <TARGET>  Comma-separated tools to install for, skipping auto-detection (requires -g) [possible values: claude, codex, opencode, windsurf, copilot, cursor]
+  -h, --help             Print help

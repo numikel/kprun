@@ -1,0 +1,9 @@
+Delete a vault entry
+
+Usage: kprun delete <ENTRY>
+
+Arguments:
+  <ENTRY>  Vault entry title to delete
+
+Options:
+  -h, --help  Print help
