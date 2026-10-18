@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `kprun migrate` stores empty and whitespace-only values instead of skipping them; a `.env` file with only empty values no longer fails (#58).
+- Minimum keepass version raised to 0.13.19, the first release that keeps empty custom fields on save→reload (#58).
 - Dependency updates: keyring; GitHub Actions.
 - Keychain-unavailable errors keep the underlying cause with keyring 4.1.6.
 

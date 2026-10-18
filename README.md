@@ -459,7 +459,6 @@ kprun init [--db PATH] [--no-store] [--keyfile PATH] [--quick [--force]]
 
 **Limitations**:
 - The vault file is stored as plaintext on disk (encrypted inside the `.kdbx` format). If the vault is compromised, all secrets are at risk.
-- `kprun migrate` skips empty or whitespace-only values (stderr warning). `kprun set` / `import` can store empty strings (keepass-rs 0.13.19+).
 - After updating from v0.4.x to v0.5.0+, the keychain account name changed (lexical path → SHA-256). Re-run `kprun init --quick` on temporary vaults to update the keychain entry.
 
 **Examples**:
@@ -774,7 +773,7 @@ kprun migrate <file> [--entry <name>] [--merge] [--gitignore] [--delete]
 
 **Limitations**:
 - Only accepts standard `.env` format (no `#` entry headers). For kprun dotenv format, use `kprun import`.
-- Empty or whitespace-only values are skipped with a stderr warning.
+- Empty and whitespace-only values are stored as-is. Unquoted values are trimmed, so quote them (`KEY="   "`) to keep whitespace.
 - Exit code `1` if the file cannot be read or parsed.
 - The source file is kept unless `--delete` is passed.
 

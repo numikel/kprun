@@ -203,56 +203,56 @@ fn migrate_missing_file_fails_without_touching_vault() {
 }
 
 #[test]
-fn migrate_skips_empty_value_with_warning() {
+fn migrate_stores_empty_and_whitespace_values() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
     create_vault_with_entries(&db, &[]);
-    let env_file = write_env_file(dir.path(), "svc", "EMPTY=\nFULL=x\n");
+    let env_file = write_env_file(dir.path(), "svc", "EMPTY=\nBLANK=\"   \"\nFULL=x\n");
 
-    // Empty values cannot survive the KDBX save/reload round-trip (the keepass
-    // backend drops empty field values), so migrate warns and skips them
-    // rather than silently losing the key.
+    // Empty and whitespace-only values survive the KDBX save/reload round-trip
+    // (keepass-rs 0.13.19+), so migrate stores them like any other value.
     kprun_cmd()
         .envs(test_env(&db))
         .args(["migrate", env_file.to_str().unwrap()])
         .assert()
         .success()
-        .stderr(predicates::str::contains("skipping key 'EMPTY'"));
+        .stderr(predicates::str::contains(
+            "3 keys imported into entry 'svc'",
+        ))
+        .stderr(predicates::str::contains("skipping key").not());
 
     kprun_cmd()
         .envs(test_env(&db))
         .args(["get", "svc", "--reveal"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("FULL=x"))
-        .stdout(predicates::str::contains("EMPTY").not());
+        .stdout(predicates::str::contains("FULL=x\n"))
+        .stdout(predicates::str::contains("EMPTY=\n"))
+        .stdout(predicates::str::contains("BLANK=   \n"));
 }
 
 #[test]
-fn migrate_all_empty_values_errors_before_unlock_and_no_entry_created() {
+fn migrate_only_empty_values_creates_entry() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
     create_vault_with_entries(&db, &[]);
-    // A file whose only key has an empty value: nothing is storable, so this
-    // must fail before the vault is unlocked, leaving no entry behind.
+    // A file whose only key has an empty value is still a valid migration:
+    // the key is stored with an empty value.
     let env_file = write_env_file(dir.path(), "svc", "EMPTY=\n");
 
     kprun_cmd()
         .envs(test_env(&db))
         .args(["migrate", env_file.to_str().unwrap()])
         .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "no non-empty KEY=value lines found",
-        ));
+        .success()
+        .stderr(predicates::str::contains("1 key imported into entry 'svc'"));
 
-    // No entry created — vault untouched.
     kprun_cmd()
         .envs(test_env(&db))
-        .args(["list", "--json"])
+        .args(["get", "svc", "--reveal"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("svc").not());
+        .stdout(predicates::str::contains("EMPTY=\n"));
 }
 
 #[test]
