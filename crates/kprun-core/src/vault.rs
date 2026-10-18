@@ -469,7 +469,8 @@ mod tests {
     }
 
     /// Documents keepass-rs empty-field round-trip after 0.13.19+
-    /// (sseemayer/keepass-rs#365). Update CLAUDE.md/README if this flips.
+    /// (sseemayer/keepass-rs#365), the minimum version in the workspace
+    /// Cargo.toml. Update CLAUDE.md/README if this flips.
     #[test]
     fn set_attributes_empty_value_round_trip() {
         let dir = tempdir().unwrap();
@@ -483,7 +484,13 @@ mod tests {
 
         let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
         vault
-            .set_attributes("svc", &[("EMPTY_KEY".into(), "".into())])
+            .set_attributes(
+                "svc",
+                &[
+                    ("EMPTY_KEY".into(), "".into()),
+                    ("BLANK_KEY".into(), "   ".into()),
+                ],
+            )
             .unwrap();
         vault.save(key.clone()).unwrap();
 
@@ -491,11 +498,17 @@ mod tests {
         let id = vault2.find_entry_by_title("svc").unwrap();
         let vals = vault2.entry_custom_values(id);
         // keepass-rs 0.13.19+ (sseemayer/keepass-rs#365) preserves empty fields
-        // through save→reload. migrate still skips empties at the CLI layer.
+        // through save→reload. Whitespace is kept exactly because custom fields
+        // are stored protected (encrypted), so the XML value is never blank.
         assert_eq!(
             vals.get("EMPTY_KEY").map(String::as_str),
             Some(""),
             "empty custom fields must persist on save→reload; got {vals:?}"
+        );
+        assert_eq!(
+            vals.get("BLANK_KEY").map(String::as_str),
+            Some("   "),
+            "whitespace-only custom fields must persist unchanged; got {vals:?}"
         );
     }
 
