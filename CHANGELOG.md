@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: keyring; GitHub Actions.
 - Keychain-unavailable errors keep the underlying cause with keyring 4.1.6.
 
+### Security
+
+- rustls 0.23.46 (RUSTSEC-2026-0346, -0347, -0348, -0349).
+
 ## [0.7.2] - 2026-09-25
 
 See [docs/changelogs/v0.7.2.md](docs/changelogs/v0.7.2.md) for details.
