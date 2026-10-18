@@ -2,6 +2,7 @@ mod common;
 
 use std::path::Path;
 
+use assert_cmd::Command;
 use serde_json::Value;
 
 use common::{create_vault_with_entries, kprun_cmd, test_env};
@@ -10,13 +11,25 @@ fn setup_vault(db: &Path) {
     create_vault_with_entries(db, &[("github", &[("GITHUB_TOKEN", "ghp_secret")])]);
 }
 
+/// kprun pointed at a fake HOME (both `HOME` and `USERPROFILE`, matching
+/// kprun-core's `home_dir()`) with `COPILOT_HOME` unset: doctor reads the
+/// global agent files, so the developer's real ones must never leak in.
+fn kprun_with_home(home: &Path) -> Command {
+    let mut cmd = kprun_cmd();
+    cmd.env("HOME", home)
+        .env("USERPROFILE", home)
+        .env_remove("COPILOT_HOME");
+    cmd
+}
+
 #[test]
 fn doctor_reports_vault_unlock_and_binary() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
     setup_vault(&db);
+    let home = tempfile::tempdir().unwrap();
 
-    let output = kprun_cmd()
+    let output = kprun_with_home(home.path())
         .envs(test_env(&db))
         .current_dir(dir.path())
         .args(["doctor"])
@@ -140,24 +153,47 @@ fn doctor_reports_agents_policy_installed() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");
     setup_vault(&db);
+    let home = tempfile::tempdir().unwrap();
+    let copilot_home = tempfile::tempdir().unwrap();
+    let doctor = || {
+        let output = kprun_with_home(home.path())
+            .env("COPILOT_HOME", copilot_home.path())
+            .envs(test_env(&db))
+            .current_dir(dir.path())
+            .args(["doctor"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        String::from_utf8_lossy(&output).into_owned()
+    };
 
+    // Global install only (#70): doctor must find the files `-g` wrote,
+    // resolving COPILOT_HOME the same way the installer does.
+    kprun_with_home(home.path())
+        .env("COPILOT_HOME", copilot_home.path())
+        .current_dir(dir.path())
+        .args(["agents", "install", "-g", "--target", "claude,copilot"])
+        .assert()
+        .success();
+    let stdout = doctor();
+    assert!(
+        stdout.contains("agents: policy installed (global: claude, copilot)"),
+        "stdout was: {stdout}"
+    );
+
+    // Repo-level install on top: both scopes are listed.
     kprun_cmd()
         .current_dir(dir.path())
         .args(["agents", "install"])
         .assert()
         .success();
-
-    let output = kprun_cmd()
-        .envs(test_env(&db))
-        .current_dir(dir.path())
-        .args(["doctor"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let stdout = String::from_utf8_lossy(&output);
-    assert!(stdout.contains("agents: policy installed (AGENTS.md, CLAUDE.md)"));
+    let stdout = doctor();
+    assert!(
+        stdout.contains("agents: policy installed (AGENTS.md, CLAUDE.md; global: claude, copilot)"),
+        "stdout was: {stdout}"
+    );
 }
 
 #[test]
@@ -176,8 +212,9 @@ fn doctor_reports_agents_installed_from_claude_md_only() {
         .success();
     // Leave only CLAUDE.md behind.
     std::fs::remove_file(dir.path().join("AGENTS.md")).unwrap();
+    let home = tempfile::tempdir().unwrap();
 
-    let output = kprun_cmd()
+    let output = kprun_with_home(home.path())
         .envs(test_env(&db))
         .current_dir(dir.path())
         .args(["doctor"])

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: keyring; GitHub Actions.
 - Keychain-unavailable errors keep the underlying cause with keyring 4.1.6.
 
+### Fixed
+
+- `kprun doctor` recognizes the agent policy installed globally with `kprun agents install -g` instead of reporting `agents: not configured` (#70).
+
 ### Security
 
 - rustls 0.23.46 (RUSTSEC-2026-0346, -0347, -0348, -0349).

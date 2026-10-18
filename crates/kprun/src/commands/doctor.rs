@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use clap::ValueEnum;
 use kprun_core::config::Config;
 use kprun_core::unlock::keystore_has_master;
 use kprun_core::Result;
@@ -7,7 +8,10 @@ use serde_json::json;
 
 use crate::ui;
 
-use super::{agents::policy, run_command, unlock_vault_readonly};
+use super::{
+    agents::{policy, targets},
+    run_command, unlock_vault_readonly,
+};
 
 pub fn execute(mcp: Option<String>, command: Vec<String>) -> i32 {
     run_command(|| run(mcp, command))
@@ -65,20 +69,45 @@ fn print_diagnostics() -> Result<()> {
     let binary = std::env::current_exe()?;
     println!("binary: {}", binary.display());
 
-    // Read-only marker check in cwd — same helper the installer uses.
-    // `agents install` writes both AGENTS.md and CLAUDE.md, so either file
-    // carrying the block counts as configured; report which ones do.
-    let installed: Vec<&str> = ["AGENTS.md", "CLAUDE.md"]
+    println!("{}", agents_status());
+
+    Ok(())
+}
+
+/// The `agents:` status line, from read-only marker checks (same helper the
+/// installer uses). Repo level, in cwd: `agents install` writes both
+/// AGENTS.md and CLAUDE.md, so either file carrying the block counts.
+/// Global: the files `agents install -g` writes, resolved from HOME and
+/// COPILOT_HOME like the installer does — every target is checked, not just
+/// detected ones, because `--target` installs for undetected tools too.
+fn agents_status() -> String {
+    let repo: Vec<&str> = ["AGENTS.md", "CLAUDE.md"]
         .into_iter()
         .filter(|name| policy::has_policy_block(Path::new(name)))
         .collect();
-    if installed.is_empty() {
-        println!("agents: not configured (run: kprun agents install)");
-    } else {
-        println!("agents: policy installed ({})", installed.join(", "));
-    }
+    let home = kprun_core::config::home_dir();
+    let copilot_home = std::env::var_os("COPILOT_HOME").map(PathBuf::from);
+    let global: Vec<String> = targets::ALL_TARGETS
+        .into_iter()
+        .filter(|tool| {
+            targets::target_file(*tool, &home, copilot_home.as_deref())
+                .is_some_and(|file| policy::has_policy_block(&file))
+        })
+        .filter_map(|tool| tool.to_possible_value().map(|v| v.get_name().to_owned()))
+        .collect();
 
-    Ok(())
+    let mut parts = Vec::new();
+    if !repo.is_empty() {
+        parts.push(repo.join(", "));
+    }
+    if !global.is_empty() {
+        parts.push(format!("global: {}", global.join(", ")));
+    }
+    if parts.is_empty() {
+        "agents: not configured (run: kprun agents install)".into()
+    } else {
+        format!("agents: policy installed ({})", parts.join("; "))
+    }
 }
 
 fn print_mcp_fragment(entry: &str, child_command: &[String]) -> Result<()> {
