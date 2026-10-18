@@ -117,7 +117,9 @@ jobs:
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          if ! git diff "$base" "$head" -- Cargo.toml | grep -q '^[+-].*version'; then
+          # Match only the [workspace.package] `version = ...` line, not
+          # dependency requirements such as `keepass = { version = ... }`.
+          if ! git diff "$base" "$head" -- Cargo.toml | grep -qE '^[+-]version[[:space:]]*='; then
             echo "Cargo.toml version unchanged — skip changelog check"
             exit 0
           fi
