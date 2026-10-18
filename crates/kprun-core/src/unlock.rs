@@ -192,6 +192,25 @@ pub fn build_database_key(ctx: &UnlockContext, master: &str) -> Result<VaultKey>
     Ok(VaultKey::new(key))
 }
 
+/// Open the keychain entry for `account`.
+///
+/// Since keyring 4.1.6 a failed credential-store initialisation is sticky and
+/// `Entry::new` only reports a bare `NoDefaultStore`; the actual cause (e.g. no
+/// secret-service/dbus) lives in `Entry::store_status`. Surface that cause so
+/// user-facing keychain errors stay actionable.
+fn open_entry(account: &str) -> std::result::Result<Entry, keyring::v1::Error> {
+    use keyring::v1::Error as E;
+    Entry::new(SERVICE, account).map_err(|e| match (e, Entry::store_status()) {
+        (E::NoDefaultStore, Err(E::PlatformFailure(cause))) => {
+            E::PlatformFailure(cause.to_string().into())
+        }
+        (E::NoDefaultStore, Err(E::NoStorageAccess(cause))) => {
+            E::NoStorageAccess(cause.to_string().into())
+        }
+        (e, _) => e,
+    })
+}
+
 /// All keychain access funnels through `keystore_set` / `keystore_get` /
 /// `keystore_delete` so the test-hooks file-backed seam covers every caller
 /// (store, read, delete, has, probe) in one place.
@@ -200,7 +219,7 @@ fn keystore_set(account: &str, value: &str) -> Result<()> {
     if let Some(dir) = test_keystore::dir_from_env() {
         return test_keystore::set(&dir, account, value);
     }
-    let entry = Entry::new(SERVICE, account)?;
+    let entry = open_entry(account)?;
     entry.set_password(value)?;
     Ok(())
 }
@@ -210,7 +229,7 @@ fn keystore_get(account: &str) -> Result<Zeroizing<String>> {
     if let Some(dir) = test_keystore::dir_from_env() {
         return test_keystore::get(&dir, account);
     }
-    let entry = Entry::new(SERVICE, account)?;
+    let entry = open_entry(account)?;
     match entry.get_password() {
         Ok(pw) => Ok(Zeroizing::new(pw)),
         Err(keyring::v1::Error::NoEntry) => Err(KprunError::UnlockFailed),
@@ -223,7 +242,7 @@ fn keystore_delete(account: &str) -> Result<()> {
     if let Some(dir) = test_keystore::dir_from_env() {
         return test_keystore::delete(&dir, account);
     }
-    let entry = Entry::new(SERVICE, account)?;
+    let entry = open_entry(account)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::v1::Error::NoEntry) => Ok(()),
