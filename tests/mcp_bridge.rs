@@ -160,6 +160,70 @@ fn streamable_json_bridges_frames_and_headers() {
 }
 
 #[test]
+fn discover_probe_answered_locally_then_initialize_bridged() {
+    // MCP 2026-07-28 dual-era clients probe stdio servers with
+    // `server/discover` first. The bridge must answer it with a JSON-RPC
+    // error (so the client falls back to `initialize`) and never send it
+    // upstream — a legacy upstream would reject it with HTTP 400.
+    const DISCOVER: &str = r#"{"jsonrpc":"2.0","id":0,"method":"server/discover","params":{}}"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start(|req| {
+        if req.method != "POST" {
+            return MockResponse::Empty {
+                status: 405,
+                headers: vec![],
+            };
+        }
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            MockResponse::Empty {
+                status: 400,
+                headers: vec![],
+            }
+        }
+    });
+
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args([
+            "mcp",
+            "-e",
+            "github",
+            "--bearer",
+            "TOKEN",
+            &server.url("/mcp/"),
+        ])
+        .write_stdin(format!("{DISCOVER}\n{INIT}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2);
+    // Bridge-generated frame: compare structurally (key order is not fixed).
+    let error: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(
+        error,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "error": { "code": -32601, "message": "Method not found" }
+        })
+    );
+    assert_eq!(lines[1], INIT_RESULT);
+
+    let requests = server.requests.lock().unwrap();
+    let posts: Vec<_> = requests.iter().filter(|r| r.method == "POST").collect();
+    assert_eq!(posts[0].body, INIT);
+    assert!(posts.iter().all(|r| !r.body.contains("server/discover")));
+}
+
+#[test]
 fn streamable_sse_response_forwards_all_events() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("secrets.kdbx");

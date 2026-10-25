@@ -17,12 +17,14 @@ pub fn run(
 ) -> Result<i32> {
     let post_agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        .tls_config(super::platform_tls())
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_global(Some(cfg.timeout))
         .build()
         .into();
     let stream_agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        .tls_config(super::platform_tls())
         .timeout_connect(Some(Duration::from_secs(10)))
         .build()
         .into();

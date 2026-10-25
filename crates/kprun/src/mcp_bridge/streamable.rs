@@ -132,6 +132,7 @@ impl Session {
         // headers arrive.
         let post_agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .tls_config(super::platform_tls())
             .timeout_connect(Some(Duration::from_secs(10)))
             .build()
             .into();
@@ -403,6 +404,7 @@ impl Session {
         // Long-lived stream: connect timeout only, no global timeout.
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .tls_config(super::platform_tls())
             .timeout_connect(Some(Duration::from_secs(10)))
             .build()
             .into();
@@ -506,6 +508,7 @@ impl Session {
         }
         let delete_agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .tls_config(super::platform_tls())
             .timeout_global(Some(SHUTDOWN_DELETE_TIMEOUT))
             .build()
             .into();

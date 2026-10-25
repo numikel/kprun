@@ -26,7 +26,7 @@ tempfile = "3.27"
 sha2 = "0.11.0"
 assert_cmd = "2.0"
 predicates = "3.1"
-ureq = "3.3"
+ureq = { version = "3.3", features = ["platform-verifier"] }
 
 # Argon2id (64 MiB, t=3) is prohibitively slow unoptimized; tests create
 # and unlock vaults constantly.

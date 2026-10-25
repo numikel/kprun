@@ -125,8 +125,37 @@ pub fn run_bridge(cfg: BridgeConfig) -> Result<i32> {
     let Some(first) = lines.next() else {
         return Ok(0);
     };
-    let first = first?;
+    let mut first = first?;
+    // Dual-era clients (MCP 2026-07-28+) probe a stdio server with
+    // `server/discover` before `initialize`. The bridge speaks the
+    // initialize era, so it answers the probe locally with -32601 (spec:
+    // any non-modern error marks a legacy server) and waits for the
+    // `initialize` the client falls back to.
+    while is_discover_probe(&first) {
+        emit_rpc_error_with_code(&first, -32601, "Method not found");
+        let Some(next) = lines.next() else {
+            return Ok(0);
+        };
+        first = next?;
+    }
     select_transport(cfg.transport).run(&cfg, first, &mut lines)
+}
+
+/// True for a `server/discover` request (it has an `id`; a notification
+/// would need no answer and is not a probe).
+fn is_discover_probe(frame: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(frame).is_ok_and(|v| {
+        v.get("method").and_then(|m| m.as_str()) == Some("server/discover")
+            && v.get("id").is_some_and(|id| !id.is_null())
+    })
+}
+
+/// TLS roots from the OS certificate store, so corporate/internal CAs the
+/// machine already trusts are trusted by the bridge's HTTP agents too.
+pub(crate) fn platform_tls() -> ureq::tls::TlsConfig {
+    ureq::tls::TlsConfig::builder()
+        .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+        .build()
 }
 
 /// Write one JSON-RPC frame to stdout, line-atomically (two threads may
@@ -141,6 +170,11 @@ pub(crate) fn write_frame(frame: &str) {
 /// Emit a JSON-RPC -32603 error for a failed request. The frame copy is
 /// parsed only to recover `id`; notifications (no id) get no response.
 pub(crate) fn emit_rpc_error(frame: &str, message: &str) {
+    emit_rpc_error_with_code(frame, -32603, message);
+}
+
+/// Same as `emit_rpc_error` with an explicit JSON-RPC error code.
+pub(crate) fn emit_rpc_error_with_code(frame: &str, code: i32, message: &str) {
     let id = serde_json::from_str::<serde_json::Value>(frame)
         .ok()
         .and_then(|v| v.get("id").cloned());
@@ -151,7 +185,7 @@ pub(crate) fn emit_rpc_error(frame: &str, message: &str) {
     let error = serde_json::json!({
         "jsonrpc": "2.0",
         "id": id,
-        "error": { "code": -32603, "message": message }
+        "error": { "code": code, "message": message }
     });
     write_frame(&error.to_string());
 }
@@ -183,7 +217,22 @@ pub(crate) fn http_err(e: ureq::Error) -> KprunError {
 
 #[cfg(test)]
 mod tests {
-    use super::redact_url;
+    use super::{is_discover_probe, redact_url};
+
+    #[test]
+    fn discover_probe_detected_only_for_requests() {
+        assert!(is_discover_probe(
+            r#"{"jsonrpc":"2.0","id":0,"method":"server/discover","params":{}}"#
+        ));
+        // Notification (no id) and other methods are not probes.
+        assert!(!is_discover_probe(
+            r#"{"jsonrpc":"2.0","method":"server/discover"}"#
+        ));
+        assert!(!is_discover_probe(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#
+        ));
+        assert!(!is_discover_probe("not json"));
+    }
 
     #[test]
     fn redact_url_keeps_scheme_and_host_only() {
