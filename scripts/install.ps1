@@ -253,11 +253,21 @@ function Verify-Installation([string]$InstalledBin) {
         Write-Warn "Another version of $BinaryName is taking priority: $($command.Source)"
         if ($command.Source -match '\.cargo[/\\]bin') {
             Write-Substep 'Cleanup' 'Attempting to remove cargo-installed version...'
-            Remove-Item -Path $command.Source -Force -ErrorAction SilentlyContinue
-            if (Test-Path $command.Source) {
-                Write-Warn "Could not remove $($command.Source) (it might be running). Please delete it manually."
-            } else {
+            $stale = $command.Source
+            try {
+                Remove-Item -Path $stale -Force -ErrorAction Stop
                 Write-Step 'Cleanup' 'Removed cargo version to fix PATH conflict'
+            } catch {
+                # A running exe cannot be deleted, but Windows still lets it
+                # be renamed; that frees the name on PATH ('.old' is not in
+                # PATHEXT) and the file can be deleted once the process exits.
+                $parked = "$stale.old"
+                try {
+                    Move-Item -Path $stale -Destination $parked -Force -ErrorAction Stop
+                    Write-Step 'Cleanup' "Renamed cargo version to $parked (in use; delete it after closing running $BinaryName sessions)"
+                } catch {
+                    Write-Warn "Could not remove $stale ($($_.Exception.Message)). Close any running $BinaryName sessions and delete it manually."
+                }
             }
         } else {
             Write-Warn "Please delete it manually so the newly installed version is used."
