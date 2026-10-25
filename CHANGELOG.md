@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-25
+
+See [docs/changelogs/v0.7.3.md](docs/changelogs/v0.7.3.md) for details.
+
 ### Changed
 
 - `kprun migrate` stores empty and whitespace-only values instead of skipping them; a `.env` file with only empty values no longer fails (#58).
 - Minimum keepass version raised to 0.13.19, the first release that keeps empty custom fields on save→reload (#58).
 - Dependency updates: keyring; GitHub Actions.
 - Keychain-unavailable errors keep the underlying cause with keyring 4.1.6.
+- `kprun mcp` trusts the operating system certificate store for HTTPS (corporate and internal CAs).
 
 ### Fixed
 
+- `kprun mcp` answers a `server/discover` probe (MCP 2026-07-28+ clients) with JSON-RPC `-32601` and waits for `initialize` instead of treating the probe as the handshake.
 - `kprun doctor` recognizes the agent policy installed globally with `kprun agents install -g` instead of reporting `agents: not configured` (#70).
 
 ### Security
