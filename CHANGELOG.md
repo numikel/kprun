@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-25
+
+See [docs/changelogs/v0.7.4.md](docs/changelogs/v0.7.4.md) for details.
+
+### Changed
+
+- Dependency updates (`cargo update`), superseding the open dependabot PRs for rand, which, sha2, zeroize, serde.
+
+### Security
+
+- rustls-webpki 0.103.16 (RUSTSEC-2026-0382), webpki-roots and webpki-root-certs 1.0.11 (RUSTSEC-2026-0381, -0383), ctutils 0.4.5 (RUSTSEC-2026-0385). v0.7.3 shipped with the vulnerable versions.
+
 ## [0.7.3] - 2026-10-25
 
 See [docs/changelogs/v0.7.3.md](docs/changelogs/v0.7.3.md) for details.
