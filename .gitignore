@@ -10,6 +10,8 @@ target-*/
 # test master password), used to catch KDBX regressions across keepass bumps.
 !tests/fixtures/golden/*.kdbx
 **/*.keyfile
+# Exception: keyfile paired with the golden keyfile vault (test-only, random).
+!tests/fixtures/golden/*.keyfile
 kprun-release.key
 kprun-release.pub
 .env
