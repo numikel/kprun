@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-10-26
+
+See [docs/changelogs/v0.7.5.md](docs/changelogs/v0.7.5.md) for details.
+
+### Changed
+
+- MSRV 1.89.0 (keepass 0.15+).
+- Dependency updates: keepass 0.17.0, serde, serde_json, ureq 3.5.0, keyring 4.2.0; GitHub Actions.
+- `kprun mcp` proxy credentials are percent-decoded (ureq 3.5.0): write a literal `%` as `%25`.
+
+### Fixed
+
+- `kprun delete` no longer corrupts other entries' attachments (keepass 0.17.0).
+- `install.ps1` parks a running cargo-installed `kprun.exe` instead of failing.
+
 ## [0.7.4] - 2026-10-25
 
 See [docs/changelogs/v0.7.4.md](docs/changelogs/v0.7.4.md) for details.
