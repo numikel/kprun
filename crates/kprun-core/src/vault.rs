@@ -663,6 +663,58 @@ mod tests {
         assert!(matches!(err, KprunError::DuplicateEntry(_)));
     }
 
+    /// `delete` on a vault with attachments (e.g. one managed in KeePassXC)
+    /// must leave every other entry's attachment intact. keepass 0.13.25
+    /// wrote sparse attachment refs after a removal, so B read C's data and
+    /// C lost its attachment.
+    #[test]
+    fn delete_entry_preserves_other_entries_attachments() {
+        use keepass::db::Value;
+        use keepass::Database;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("attach.kdbx");
+        let mut db = Database::new();
+        for (title, data) in [("A", "AAA"), ("B", "BBB"), ("C", "CCC")] {
+            db.root_mut().add_entry().edit(|e| {
+                e.set_unprotected(fields::TITLE, title);
+                e.add_attachment(
+                    format!("{title}.txt"),
+                    Value::unprotected(data.as_bytes().to_vec()),
+                );
+            });
+        }
+        let ctx = UnlockContext {
+            keyfile: None,
+            db_path: PathBuf::from("test.kdbx"),
+        };
+        let key = build_database_key(&ctx, test_vault_password()).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        db.save(&mut file, key.clone().into_inner()).unwrap();
+        drop(file);
+
+        let mut vault = open_vault(&path, key.clone(), OpenMode::ReadWrite).unwrap();
+        vault.delete_entry("A").unwrap();
+        vault.save(key.clone()).unwrap();
+
+        let mut file = std::fs::File::open(&path).unwrap();
+        let db = Database::open(&mut file, key.into_inner()).unwrap();
+        let mut found: Vec<(String, Vec<Vec<u8>>)> = db
+            .iter_all_entries()
+            .map(|e| {
+                let data = e.attachments().map(|a| a.data.get().to_vec()).collect();
+                (e.get_title().unwrap().to_string(), data)
+            })
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                ("B".to_string(), vec![b"BBB".to_vec()]),
+                ("C".to_string(), vec![b"CCC".to_vec()]),
+            ]
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn create_vault_is_owner_only() {
