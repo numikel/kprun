@@ -3,14 +3,14 @@ resolver = "2"
 members = ["crates/kprun-core", "crates/kprun"]
 
 [workspace.package]
-version = "0.7.4"
+version = "0.7.5"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.89.0"
 license = "MIT"
 
 [workspace.dependencies]
 kprun-core = { path = "crates/kprun-core", version = "0.3.0" }
-keepass = { version = "0.13.19", features = ["save_kdbx4"] }
+keepass = { version = "0.17.0", features = ["save_kdbx4"] }
 rust-argon2 = "3.0"
 keyring = { version = "4.1.2", features = ["v1"] }  # v1 is default; explicit for clarity
 clap = { version = "4.6.1", features = ["derive"] }

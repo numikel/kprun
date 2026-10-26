@@ -201,6 +201,40 @@ fn json_output_is_one_parsable_document_with_masked_values() {
     );
 }
 
+/// Absent fields are omitted, not written as `null` (the JSON schema is
+/// exact). Guards the `skip_serializing_if` code serde_derive generates.
+#[test]
+fn json_findings_omit_absent_fields() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_repo(tmp.path());
+    let secret = "AKIA".to_string() + &"D".repeat(16);
+    std::fs::write(tmp.path().join(".env"), "APP_SECRET=value\n").unwrap();
+    std::fs::write(tmp.path().join("cfg.txt"), format!("k={secret}\n")).unwrap();
+    commit_all(tmp.path(), "add files");
+
+    let mut cmd = scan_cmd(tmp.path());
+    cmd.arg("--json");
+    let assert = cmd.assert().code(1);
+    let v: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+
+    let keys_of = |kind: &str| -> Vec<String> {
+        let finding = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["kind"] == kind)
+            .unwrap_or_else(|| panic!("no {kind} finding"));
+        let mut keys: Vec<String> = finding.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    assert_eq!(keys_of("tracked_env_file"), ["kind", "path"]);
+    assert_eq!(
+        keys_of("secret"),
+        ["kind", "line", "masked", "origin", "path", "pattern"]
+    );
+}
+
 #[test]
 fn json_output_on_clean_repo_has_empty_findings_and_exit_zero() {
     let tmp = tempfile::tempdir().unwrap();

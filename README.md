@@ -1,8 +1,8 @@
-# kprun v0.7.4
+# kprun v0.7.5
 
 [![CI](https://github.com/numikel/kprun/actions/workflows/ci.yml/badge.svg)](https://github.com/numikel/kprun/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Rust](https://img.shields.io/badge/Rust-1.88.0-orange?logo=rust)
+![Rust](https://img.shields.io/badge/Rust-1.89.0-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 ![kprun demo](docs/kprun.gif)
@@ -63,7 +63,7 @@ Unlock priority: `KPRUN_KEYFILE` → OS keystore (`kprun` / `master`) → hidden
 
 ## Requirements
 
-- **Rust**: 1.88.0+ (to build from source)
+- **Rust**: 1.89.0+ (to build from source)
 - **OS**: Linux, macOS, or Windows
 - **Optional**: [KeePassXC](https://keepassxc.org/) to create or edit `.kdbx` files
 - **MCP client**: Cursor, Claude Code, or any tool that spawns a subprocess over stdio

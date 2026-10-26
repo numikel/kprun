@@ -259,6 +259,69 @@ fn truncated_vault_is_rejected_cleanly() {
         .stderr("error: failed to open vault: Unexpected end of file\n");
 }
 
+// `kprun-v0.7.4-keyfile.kdbx` + `kprun-v0.7.4.keyfile` were written by kprun
+// 0.7.4 (keepass 0.13.25): test master password plus a 64-byte random
+// keyfile from `generate_keyfile`. They pin the composite-key derivation
+// across keepass bumps (the keyfile parser changed in keepass 0.14). Same
+// rules as the password-only fixture: work on copies, regenerate only
+// deliberately:
+//   cargo test --test keepassxc_compat --features test-hooks \
+//     generate_golden_keyfile_fixture -- --ignored
+
+const GOLDEN_KEYFILE_ENTRY: &[(&str, &str)] = &[("KF_KEY", "kf-golden-value")];
+
+fn golden_keyfile_paths() -> (PathBuf, PathBuf) {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/golden");
+    (
+        dir.join("kprun-v0.7.4-keyfile.kdbx"),
+        dir.join("kprun-v0.7.4.keyfile"),
+    )
+}
+
+#[test]
+#[ignore = "regenerates the committed golden keyfile fixture; run deliberately"]
+fn generate_golden_keyfile_fixture() {
+    let (db, keyfile) = golden_keyfile_paths();
+    let _ = std::fs::remove_file(&db);
+    let _ = std::fs::remove_file(&keyfile);
+    create_vault_with_keyfile_entries(&db, &keyfile, &[("kf", GOLDEN_KEYFILE_ENTRY)]);
+}
+
+#[test]
+fn reads_golden_keyfile_fixture_written_by_kprun_0_7_4() {
+    let dir = tempfile::tempdir().unwrap();
+    let (golden_db, golden_keyfile) = golden_keyfile_paths();
+    let db = dir.path().join("golden-keyfile-copy.kdbx");
+    let keyfile = dir.path().join("golden-copy.keyfile");
+    std::fs::copy(golden_db, &db).expect("golden keyfile vault missing");
+    std::fs::copy(golden_keyfile, &keyfile).expect("golden keyfile missing");
+
+    let out = kprun_cmd()
+        .envs(test_env(&db))
+        .env("KPRUN_KEYFILE", &keyfile)
+        .args(["export", "--stdout", "--reveal"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        value,
+        expected_export(&[("kf", GOLDEN_KEYFILE_ENTRY)]),
+        "values read from the kprun 0.7.4 keyfile vault changed"
+    );
+
+    kprun_cmd()
+        .envs(test_env(&db))
+        .env_remove("KPRUN_KEYFILE")
+        .args(["list"])
+        .assert()
+        .code(1)
+        .stdout("")
+        .stderr("error: failed to open vault: Incorrect key\n");
+}
+
 #[test]
 fn password_plus_keyfile_vault_requires_both() {
     let dir = tempfile::tempdir().unwrap();
