@@ -56,6 +56,13 @@ pub enum MockResponse {
     /// `text/event-stream` body using `Transfer-Encoding: chunked`, one HTTP
     /// chunk per element (chunk boundaries may split SSE lines/events).
     SseChunked { status: u16, chunks: Vec<String> },
+    /// `application/json` body using `Transfer-Encoding: chunked`, one HTTP
+    /// chunk per element. Honors keep-alive like `Json`.
+    JsonChunked {
+        status: u16,
+        headers: Vec<(String, String)>,
+        chunks: Vec<String>,
+    },
 }
 
 pub struct MockServer {
@@ -153,7 +160,9 @@ fn handle_connection(
         let reusable = keep_alive
             && matches!(
                 response,
-                MockResponse::Json { .. } | MockResponse::Empty { .. }
+                MockResponse::Json { .. }
+                    | MockResponse::JsonChunked { .. }
+                    | MockResponse::Empty { .. }
             );
         write_response(&mut stream, response, reusable);
         if !reusable {
@@ -274,6 +283,26 @@ fn write_response(stream: &mut TcpStream, response: MockResponse, keep_alive: bo
         MockResponse::Delayed { delay, then } => {
             thread::sleep(delay);
             write_response(stream, *then, false);
+        }
+        MockResponse::JsonChunked {
+            status,
+            headers,
+            chunks,
+        } => {
+            let mut head = format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: {connection}\r\n"
+            );
+            for (name, value) in headers {
+                head.push_str(&format!("{name}: {value}\r\n"));
+            }
+            head.push_str("\r\n");
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.flush();
+            for chunk in chunks {
+                let _ = write!(stream, "{:x}\r\n{chunk}\r\n", chunk.len());
+                let _ = stream.flush();
+            }
+            let _ = stream.write_all(b"0\r\n\r\n");
         }
         MockResponse::SseChunked { status, chunks } => {
             let head = format!(
