@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-11-12
+
+See [docs/changelogs/v0.7.6.md](docs/changelogs/v0.7.6.md) for details.
+
+### Changed
+
+- Dependency updates: ureq 3.5.2 (ureq-proto 0.7.1); GitHub Actions install-action, action-gh-release.
+
+### Fixed
+
+- `kprun mcp` accepts an upstream JSON response of exactly 10 MiB (ureq 3.5.2).
+
 ## [0.7.5] - 2026-10-26
 
 See [docs/changelogs/v0.7.5.md](docs/changelogs/v0.7.5.md) for details.
