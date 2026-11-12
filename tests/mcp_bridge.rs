@@ -1507,3 +1507,218 @@ fn keep_alive_server_session_reuses_pooled_connections() {
         requests.len()
     );
 }
+
+/// Handler for keep-alive tests: `initialize` gets a session, anything else
+/// echoes an empty result for the request id.
+fn echo_result(req: &common::mcp_mock::MockRequest) -> MockResponse {
+    if req.method != "POST" {
+        return MockResponse::Empty {
+            status: 405,
+            headers: vec![],
+        };
+    }
+    if req.body.contains("\"initialize\"") {
+        return init_response();
+    }
+    let id = serde_json::from_str::<serde_json::Value>(&req.body).unwrap()["id"].clone();
+    MockResponse::Json {
+        status: 200,
+        headers: vec![],
+        body: format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{}}}}"#),
+    }
+}
+
+/// kprun never enables ureq's cookie jar. ureq 3.5.1 changed what goes into
+/// a `Cookie` header (#1222); this pins that no `Cookie` header is ever sent,
+/// even when the upstream sets one, so that change can never reach us.
+#[test]
+fn set_cookie_from_upstream_is_never_echoed_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start_keep_alive(|req| {
+        if req.method == "POST" && req.body.contains("\"initialize\"") {
+            return MockResponse::Json {
+                status: 200,
+                headers: vec![
+                    ("Mcp-Session-Id".into(), "sess-1".into()),
+                    (
+                        "Set-Cookie".into(),
+                        "sid=abc123; Path=/; Secure; HttpOnly".into(),
+                    ),
+                ],
+                body: INIT_RESULT.into(),
+            };
+        }
+        echo_result(req)
+    });
+
+    let url = server.url("/mcp/");
+    kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{NOTIFY}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let requests = server.requests.lock().unwrap();
+    assert!(requests.len() >= 3, "expected init, notify and list POSTs");
+    for r in requests.iter() {
+        assert!(
+            !r.headers.contains_key("cookie"),
+            "unexpected Cookie header on {} {}",
+            r.method,
+            r.path
+        );
+    }
+}
+
+/// A `Transfer-Encoding: chunked` JSON response on a keep-alive server must
+/// be forwarded byte-for-byte and leave the connection reusable
+/// (ureq-proto 0.7 touched chunked framing and connection reuse).
+#[test]
+fn chunked_json_response_keeps_connection_reusable() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let server = MockServer::start_keep_alive(|req| {
+        if req.method == "POST" && !req.body.contains("\"initialize\"") {
+            let id = serde_json::from_str::<serde_json::Value>(&req.body).unwrap()["id"].clone();
+            let full = format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{"tools":[]}}}}"#);
+            // Split mid-token so chunk edges do not align with JSON structure.
+            let (a, b) = full.split_at(17);
+            return MockResponse::JsonChunked {
+                status: 200,
+                headers: vec![],
+                chunks: vec![a.to_string(), b.to_string()],
+            };
+        }
+        echo_result(req)
+    });
+
+    let frames: Vec<String> = (10..16)
+        .map(|id| format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"ping"}}"#))
+        .collect();
+    let url = server.url("/mcp/");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{}\n", frames.join("\n")))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let expected: Vec<String> = std::iter::once(INIT_RESULT.to_string())
+        .chain(
+            (10..16).map(|id| format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{"tools":[]}}}}"#)),
+        )
+        .collect();
+    assert_eq!(stdout.lines().collect::<Vec<_>>(), expected);
+
+    let requests = server.requests.lock().unwrap();
+    assert!(
+        server.connection_count() < requests.len(),
+        "expected keep-alive reuse after chunked bodies: {} connections for {} requests",
+        server.connection_count(),
+        requests.len()
+    );
+}
+
+/// ureq's default `read_to_string` cap (`MAX_BODY_SIZE`, 10 MiB).
+const UREQ_BODY_LIMIT: usize = 10 * 1024 * 1024;
+
+/// JSON-RPC result frame of exactly `total_len` bytes (single line).
+fn result_frame_of_len(id: u64, total_len: usize) -> String {
+    let prefix = format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{"pad":""#);
+    let suffix = r#""}}"#;
+    let pad = total_len - prefix.len() - suffix.len();
+    format!("{prefix}{}{suffix}", "x".repeat(pad))
+}
+
+/// ureq 3.5.2 (#1231) accepts bodies exactly at the size limit. A response
+/// of exactly `UREQ_BODY_LIMIT` bytes must reach stdout unchanged.
+#[test]
+fn json_response_exactly_at_body_limit_is_forwarded_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let big = result_frame_of_len(2, UREQ_BODY_LIMIT);
+    assert_eq!(big.len(), UREQ_BODY_LIMIT);
+    let big_for_server = big.clone();
+    let server = MockServer::start(move |req| {
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else {
+            MockResponse::Json {
+                status: 200,
+                headers: vec![],
+                body: big_for_server.clone(),
+            }
+        }
+    });
+
+    let url = server.url("/mcp/");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!("{INIT}\n{LIST}\n"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], INIT_RESULT);
+    assert_eq!(lines[1].len(), big.len());
+    assert!(lines[1] == big, "body at the limit was altered");
+}
+
+/// One byte over the limit must not be truncated or forwarded: the client
+/// gets a JSON-RPC error for that id and the bridge keeps serving.
+#[test]
+fn json_response_over_body_limit_emits_jsonrpc_error_and_bridge_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("secrets.kdbx");
+    setup_vault(&db);
+
+    let big = result_frame_of_len(2, UREQ_BODY_LIMIT + 1);
+    let server = MockServer::start(move |req| {
+        if req.body.contains("\"initialize\"") {
+            init_response()
+        } else if req.body.contains("tools/list") {
+            MockResponse::Json {
+                status: 200,
+                headers: vec![],
+                body: big.clone(),
+            }
+        } else {
+            MockResponse::Json {
+                status: 200,
+                headers: vec![],
+                body: r#"{"jsonrpc":"2.0","id":3,"result":{}}"#.into(),
+            }
+        }
+    });
+
+    let url = server.url("/mcp/");
+    let assert = kprun_cmd()
+        .envs(test_env(&db))
+        .args(mcp_args(&url, &[]))
+        .write_stdin(format!(
+            "{INIT}\n{LIST}\n{}\n",
+            r#"{"jsonrpc":"2.0","id":3,"method":"ping"}"#
+        ))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "stdout: {} bytes", stdout.len());
+    let error_frame: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(error_frame["id"], 2);
+    assert_eq!(error_frame["error"]["code"], -32603);
+    assert!(lines[2].contains("\"id\":3"));
+}
