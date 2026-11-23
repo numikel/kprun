@@ -264,8 +264,17 @@ fn drain_nonblocking<R: Read + AsRawFd>(reader: &mut R) -> String {
 }
 
 fn assert_terminal_restored(pty: &Pty, before: libc::tcflag_t) {
+    // Read through the master: when the session leader exits, macOS revokes
+    // every slave fd of its controlling terminal, so `tcgetattr` on ours
+    // fails. The master reports the same termios and stays valid.
+    let mut term = MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: valid fd and out-pointer; initialised on success.
+    let rc = unsafe { libc::tcgetattr(pty.master.as_raw_fd(), term.as_mut_ptr()) };
+    let os_err = io::Error::last_os_error();
+    assert_eq!(rc, 0, "tcgetattr on the pty master failed: {os_err}");
+    let now = unsafe { term.assume_init() }.c_lflag;
     assert_eq!(
-        local_flags(pty.slave.as_raw_fd()) & WATCHED,
+        now & WATCHED,
         before,
         "terminal left without echo / line editing / signals after kprun exited"
     );
