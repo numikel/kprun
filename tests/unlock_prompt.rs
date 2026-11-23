@@ -40,6 +40,8 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 struct Pty {
     master: File,
     slave: File,
+    /// Everything read from the master so far; see `terminal_output`.
+    seen: String,
 }
 
 fn open_pty() -> Pty {
@@ -60,6 +62,7 @@ fn open_pty() -> Pty {
         Pty {
             master: File::from_raw_fd(master),
             slave: File::from_raw_fd(slave),
+            seen: String::new(),
         }
     }
 }
@@ -163,6 +166,10 @@ fn type_keys(pty: &mut Pty, bytes: &[u8]) {
 fn wait_with_timeout(mut child: Child, pty: &mut Pty) -> (ExitStatus, Output) {
     let deadline = Instant::now() + TIMEOUT;
     loop {
+        // macOS: a session leader's exit waits for its terminal's output
+        // queue to drain, so an unread master leaves kprun a zombie that
+        // `try_wait` never reports. A real terminal always has a reader.
+        let _ = terminal_output(pty);
         if child.try_wait().unwrap().is_some() {
             let out = child.wait_with_output().unwrap();
             return (out.status, out);
@@ -227,9 +234,12 @@ fn hang_report(pty: &mut Pty, child: &mut Child) -> String {
     r
 }
 
-/// Everything kprun wrote to the terminal so far (non-blocking drain).
+/// Everything kprun wrote to the terminal so far. Drains the master without
+/// blocking and accumulates, so repeated calls never lose earlier output.
 fn terminal_output(pty: &mut Pty) -> String {
-    drain_nonblocking(&mut pty.master)
+    let fresh = drain_nonblocking(&mut pty.master);
+    pty.seen.push_str(&fresh);
+    pty.seen.clone()
 }
 
 fn drain_nonblocking<R: Read + AsRawFd>(reader: &mut R) -> String {
