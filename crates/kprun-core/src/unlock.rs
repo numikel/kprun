@@ -596,7 +596,7 @@ mod tests {
         let debug = format!("{pw:?}");
         assert!(
             !debug.contains(pw.as_str()),
-            "Debug leaked the master password: {debug}"
+            "Debug leaked the master password"
         );
         for group in pw.split('-') {
             assert!(!debug.contains(group), "Debug leaked a password group");
