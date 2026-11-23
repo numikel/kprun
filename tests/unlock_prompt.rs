@@ -160,7 +160,7 @@ fn type_keys(pty: &mut Pty, bytes: &[u8]) {
     pty.master.flush().unwrap();
 }
 
-fn wait_with_timeout(mut child: Child) -> (ExitStatus, Output) {
+fn wait_with_timeout(mut child: Child, pty: &mut Pty) -> (ExitStatus, Output) {
     let deadline = Instant::now() + TIMEOUT;
     loop {
         if child.try_wait().unwrap().is_some() {
@@ -168,16 +168,72 @@ fn wait_with_timeout(mut child: Child) -> (ExitStatus, Output) {
             return (out.status, out);
         }
         if Instant::now() > deadline {
+            let report = hang_report(pty, &mut child);
             let _ = child.kill();
-            panic!("kprun did not exit after input");
+            panic!("kprun did not exit after input\n{report}");
         }
         std::thread::sleep(Duration::from_millis(5));
     }
 }
 
+fn run_diag(prog: &str, args: &[&str]) -> String {
+    match Command::new(prog).args(args).output() {
+        Ok(o) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
+        Err(e) => format!("{prog}: {e}\n"),
+    }
+}
+
+/// Best-effort snapshot of a stuck kprun for the CI log; never panics.
+fn hang_report(pty: &mut Pty, child: &mut Child) -> String {
+    use std::fmt::Write as _;
+    let pid = child.id().to_string();
+    let fd = pty.slave.as_raw_fd();
+    let flags = local_flags(fd);
+    let mut queued: libc::c_int = -1;
+    // SAFETY: FIONREAD writes one c_int through a valid pointer.
+    unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut queued as *mut libc::c_int) };
+    let mut r = String::new();
+    let _ = writeln!(
+        r,
+        "slave lflags: ECHO={} ICANON={} ISIG={}; unread input bytes queued on slave: {queued}",
+        flags & libc::ECHO != 0,
+        flags & libc::ICANON != 0,
+        flags & libc::ISIG != 0
+    );
+    let _ = writeln!(r, "terminal output: {:?}", terminal_output(pty));
+    let stderr = child
+        .stderr
+        .as_mut()
+        .map(drain_nonblocking)
+        .unwrap_or_default();
+    let _ = writeln!(r, "kprun stderr so far: {stderr:?}");
+    let table = run_diag("ps", &["-A", "-o", "pid,ppid,stat,command"]);
+    let _ = writeln!(r, "processes (pid {pid} and its children):");
+    for line in table.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some(pid.as_str()) || cols.next() == Some(pid.as_str()) {
+            let _ = writeln!(r, "  {line}");
+        }
+    }
+    if cfg!(target_os = "macos") {
+        let sample = run_diag("sample", &[&pid, "1"]);
+        let head: Vec<&str> = sample.lines().take(80).collect();
+        let _ = writeln!(r, "sample {pid}:\n{}", head.join("\n"));
+    }
+    r
+}
+
 /// Everything kprun wrote to the terminal so far (non-blocking drain).
 fn terminal_output(pty: &mut Pty) -> String {
-    let fd = pty.master.as_raw_fd();
+    drain_nonblocking(&mut pty.master)
+}
+
+fn drain_nonblocking<R: Read + AsRawFd>(reader: &mut R) -> String {
+    let fd = reader.as_raw_fd();
     // SAFETY: plain fcntl flag update on an fd we own.
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
@@ -186,7 +242,7 @@ fn terminal_output(pty: &mut Pty) -> String {
     let mut out = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
-        match pty.master.read(&mut buf) {
+        match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => out.extend_from_slice(&buf[..n]),
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -223,7 +279,7 @@ fn typed_master_password_unlocks_vault_without_echo() {
         &mut pty,
         format!("{}\r", test_support::vault_password()).as_bytes(),
     );
-    let (status, out) = wait_with_timeout(child);
+    let (status, out) = wait_with_timeout(child, &mut pty);
 
     assert!(
         status.success(),
@@ -267,7 +323,7 @@ fn ctrl_c_at_master_password_prompt_aborts_and_restores_terminal() {
     let mut child = spawn_kprun_run(&pty, &fx);
     wait_for_raw_mode(&pty, &mut child);
     type_keys(&mut pty, b"pa\x03");
-    let (status, out) = wait_with_timeout(child);
+    let (status, out) = wait_with_timeout(child, &mut pty);
 
     assert_eq!(
         status.signal(),
