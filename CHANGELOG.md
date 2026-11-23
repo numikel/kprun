@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-11-23
+
+See [docs/changelogs/v0.7.7.md](docs/changelogs/v0.7.7.md) for details.
+
+### Changed
+
+- Dependency updates: clap 4.6.9, rand 0.10.4, rpassword 7.5.5, zeroize 1.9.2; GitHub Actions install-action, rust-cache.
+
+### Fixed
+
+- Ctrl+C at the master-password prompt restores the terminal (rpassword 7.5.5).
+
 ## [0.7.6] - 2026-11-12
 
 See [docs/changelogs/v0.7.6.md](docs/changelogs/v0.7.6.md) for details.

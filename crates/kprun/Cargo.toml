@@ -26,6 +26,9 @@ tempfile.workspace = true
 serde_json.workspace = true
 kprun-core = { path = "../kprun-core" }
 
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true
+
 [[test]]
 name = "version"
 path = "../../tests/version.rs"
@@ -87,6 +90,11 @@ required-features = ["test-hooks"]
 [[test]]
 name = "keepassxc_compat"
 path = "../../tests/keepassxc_compat.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "unlock_prompt"
+path = "../../tests/unlock_prompt.rs"
 required-features = ["test-hooks"]
 
 [[test]]

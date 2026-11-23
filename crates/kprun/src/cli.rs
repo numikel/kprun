@@ -301,6 +301,86 @@ mod tests {
         assert!(Cli::try_parse_from(["kprun", "mcp", "-e", "gh"]).is_err());
     }
 
+    /// Validates every subcommand's derived definition (conflicts, requires,
+    /// positional ordering) the way clap's own debug assertions do — a
+    /// derive-generated inconsistency would otherwise only surface at runtime
+    /// for the one subcommand a user happens to invoke.
+    #[test]
+    fn cli_definition_is_consistent() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    /// `kprun run` is the core path: everything before `--` selects which
+    /// vault entries are injected, everything after is the child argv,
+    /// passed through untouched even when it looks like kprun's own flags.
+    #[test]
+    fn run_splits_entries_and_child_argv_at_double_dash() {
+        let cli = Cli::try_parse_from([
+            "kprun",
+            "run",
+            "--clean-env",
+            "github",
+            "openai",
+            "--",
+            "node",
+            "server.js",
+            "--clean-env",
+            "-e",
+            "x",
+            "--",
+            "--port=3000",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Run {
+                clean_env,
+                entries,
+                command,
+            } => {
+                assert!(clean_env);
+                assert_eq!(entries, ["github", "openai"]);
+                assert_eq!(
+                    command,
+                    [
+                        "node",
+                        "server.js",
+                        "--clean-env",
+                        "-e",
+                        "x",
+                        "--",
+                        "--port=3000"
+                    ]
+                );
+            }
+            _ => panic!("expected Commands::Run"),
+        }
+    }
+
+    #[test]
+    fn run_without_clean_env_keeps_parent_env_flag_off() {
+        let cli = Cli::try_parse_from(["kprun", "run", "demo", "--", "env"]).unwrap();
+        match cli.command {
+            Commands::Run {
+                clean_env,
+                entries,
+                command,
+            } => {
+                assert!(!clean_env);
+                assert_eq!(entries, ["demo"]);
+                assert_eq!(command, ["env"]);
+            }
+            _ => panic!("expected Commands::Run"),
+        }
+    }
+
+    #[test]
+    fn run_requires_entries_and_a_command() {
+        assert!(Cli::try_parse_from(["kprun", "run", "demo"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "run", "demo", "--"]).is_err());
+        assert!(Cli::try_parse_from(["kprun", "run", "--", "env"]).is_err());
+    }
+
     #[test]
     fn set_stdin_conflicts_with_pairs() {
         assert!(Cli::try_parse_from(["kprun", "set", "e", "A=1", "--stdin"]).is_err());

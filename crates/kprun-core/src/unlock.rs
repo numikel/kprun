@@ -540,4 +540,115 @@ mod tests {
     fn generated_master_passwords_are_unique() {
         assert_ne!(*generate_master_password(), *generate_master_password());
     }
+
+    /// `init --quick` hands the vault a password nobody chose, so its only
+    /// strength is the CSPRNG behind `rand::rng().fill_bytes`. Uniqueness
+    /// alone would also pass for a counter or a mostly-stuck buffer; the bit
+    /// balance over 64 × 128 = 8192 bits (expected 4096 ones, σ ≈ 45) catches
+    /// a zero-filled or heavily biased fill. The ±400 window is ~9σ, so a
+    /// sound generator never trips it.
+    #[test]
+    fn generated_master_passwords_have_unbiased_bits() {
+        let ones: u32 = (0..64)
+            .map(|_| {
+                generate_master_password()
+                    .split('-')
+                    .map(|g| u16::from_str_radix(g, 16).unwrap().count_ones())
+                    .sum::<u32>()
+            })
+            .sum();
+        assert!(
+            (3696..=4496).contains(&ones),
+            "{ones} of 8192 generated bits set; expected ≈4096"
+        );
+    }
+
+    /// `Zeroizing`'s `Drop` wipes the master password by calling `zeroize`;
+    /// that is the only thing keeping a generated or prompted master password
+    /// out of freed heap memory. The whole allocation — spare capacity
+    /// included — must be zero afterwards, in place.
+    #[test]
+    fn generated_master_password_is_wiped_in_place_by_zeroize() {
+        use zeroize::Zeroize;
+
+        let mut pw = generate_master_password();
+        let capacity = pw.capacity();
+        assert!(capacity >= 39);
+        let secret: &mut String = &mut pw;
+        secret.zeroize();
+        assert!(secret.is_empty());
+
+        // SAFETY: only the spare capacity is inspected, through
+        // `MaybeUninit`; `zeroize` has just written every byte of it.
+        let buf = unsafe { secret.as_mut_vec() };
+        assert_eq!(buf.capacity(), capacity, "zeroize must not reallocate");
+        assert!(buf
+            .spare_capacity_mut()
+            .iter()
+            .all(|b| unsafe { b.assume_init() } == 0));
+    }
+
+    /// A master password must never reach a log line or panic message via
+    /// `{:?}` (e.g. an `unwrap_err()` on `Result<Zeroizing<String>, _>`).
+    #[test]
+    fn generated_master_password_debug_output_is_redacted() {
+        let pw = generate_master_password();
+        let debug = format!("{pw:?}");
+        assert!(
+            !debug.contains(pw.as_str()),
+            "Debug leaked the master password"
+        );
+        for group in pw.split('-') {
+            assert!(!debug.contains(group), "Debug leaked a password group");
+        }
+    }
+
+    /// `init --keyfile` creates the second vault factor from 64 CSPRNG bytes.
+    #[test]
+    fn generated_keyfiles_are_64_distinct_random_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.keyfile");
+        let b = dir.path().join("nested").join("b.keyfile");
+        generate_keyfile(&a).unwrap();
+        generate_keyfile(&b).unwrap();
+        let (ka, kb) = (std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+        assert_eq!(ka.len(), 64);
+        assert_eq!(kb.len(), 64);
+        assert_ne!(ka, kb, "two keyfiles must never share key material");
+        assert!(ka.iter().any(|&x| x != 0) && kb.iter().any(|&x| x != 0));
+    }
+
+    /// A generated keyfile is a working vault factor: it opens the vault it
+    /// was created with, and a different generated keyfile does not.
+    #[test]
+    fn generated_keyfile_unlocks_only_its_own_vault() {
+        use crate::vault::{create_vault, open_vault, OpenMode};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("kf.kdbx");
+        let kf = dir.path().join("vault.keyfile");
+        let other = dir.path().join("other.keyfile");
+        generate_keyfile(&kf).unwrap();
+        generate_keyfile(&other).unwrap();
+
+        let ctx = |keyfile: &Path| UnlockContext {
+            keyfile: Some(keyfile.to_path_buf()),
+            db_path: db.clone(),
+        };
+        let pw = crate::test_support::vault_password();
+        create_vault(&db, build_database_key(&ctx(&kf), pw).unwrap(), "kprun").unwrap();
+
+        open_vault(
+            &db,
+            build_database_key(&ctx(&kf), pw).unwrap(),
+            OpenMode::ReadOnly,
+        )
+        .expect("vault must open with the keyfile it was created with");
+        assert!(open_vault(
+            &db,
+            build_database_key(&ctx(&other), pw).unwrap(),
+            OpenMode::ReadOnly,
+        )
+        .is_err());
+    }
 }
